@@ -18,7 +18,6 @@ import {
   YAxis
 } from 'recharts';
 import {
-  CalendarDays,
   Clock3,
   Factory,
   Gauge,
@@ -35,6 +34,9 @@ import {
 } from 'lucide-react';
 import { initialMachines, initialReferences } from './initialCatalog';
 import './styles.css';
+import LanguageSwitcher from './LanguageSwitcher.jsx';
+import LiveClock from './LiveClock.jsx';
+import { languages, languageStorageKey, readLanguage, createTranslator } from './i18n.js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -89,15 +91,15 @@ function currentDateRange() {
 
 function validateProduction(row) {
   const errors = [];
-  if (!row.department) errors.push('departement');
-  if (!row.machine_code) errors.push('machine');
-  if (!row.product_reference) errors.push('reference machine');
+  if (!row.department) errors.push('Departement');
+  if (!row.machine_code) errors.push('Machine / Poste');
+  if (!row.product_reference) errors.push('Reference machine');
   if (!row.work_order?.trim()) errors.push('OF / Bon');
-  if (!row.defect_type) errors.push('pareto defaut');
+  if (!row.defect_type) errors.push('Pareto defaut');
   if (toNumber(row.good_qty) <= 0 && toNumber(row.scrap_qty) <= 0) errors.push('qte bonne ou qte rebut');
   if (toNumber(row.justified_scrap_qty) > toNumber(row.scrap_qty)) errors.push('rebut justifie <= qte rebut');
-  if (toNumber(row.mod_count) > 0 && !row.operator_names?.trim()) errors.push('nom MOD');
-  if (toNumber(row.mod_count) > 0 && toNumber(row.mod_hours) <= 0) errors.push('total heure MOD');
+  if (toNumber(row.mod_count) > 0 && !row.operator_names?.trim()) errors.push('Nom MOD');
+  if (toNumber(row.mod_count) > 0 && toNumber(row.mod_hours) <= 0) errors.push('Total heure MOD');
   return errors;
 }
 
@@ -161,12 +163,24 @@ async function deleteRow(name, row) {
 }
 
 function App() {
+  const [language, setLanguage] = useState(() => readLanguage());
+  const t = useMemo(() => createTranslator(language), [language]);
+  const locale = languages.find(({ code }) => code === language).locale;
+  const formatDate = (value) => new Date(value + 'T12:00:00').toLocaleDateString(locale);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+    document.title = t('Dashboard Qualite & Production');
+    try { localStorage.setItem(languageStorageKey, language); } catch { /* Storage may be disabled. */ }
+  }, [language, t]);
+
   const [activeDept, setActiveDept] = useState('Injection');
   const [entries, setEntries] = useState(seedEntries);
   const [machines, setMachines] = useState(seedMachines);
   const [references, setReferences] = useState(seedReferences);
   const [assignments, setAssignments] = useState(seedAssignments);
-  const [status, setStatus] = useState(supabase ? 'Connecte a Supabase' : 'Mode local: ajoutez .env pour Supabase');
+  const [status, setStatus] = useState({ key: supabase ? 'Connecte a Supabase' : 'Mode local: ajoutez .env pour Supabase' });
   const [showHistoryWindow, setShowHistoryWindow] = useState(false);
   const [filters, setFilters] = useState({ ...currentDateRange(), machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
   const [form, setForm] = useState({
@@ -225,8 +239,8 @@ function App() {
     const rows = entries.filter((entry) => entry.department === dept.key);
     const production = rows.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
     const scrap = rows.reduce((sum, row) => sum + toNumber(row.scrap_qty), 0);
-    return { name: dept.key, production, scrap, rate: production + scrap ? Number(((scrap / (production + scrap)) * 100).toFixed(1)) : 0 };
-  }), [entries]);
+    return { name: t(dept.key), production, scrap, rate: production + scrap ? Number(((scrap / (production + scrap)) * 100).toFixed(1)) : 0 };
+  }), [entries, t]);
 
   const defectData = useMemo(() => {
     const map = new Map();
@@ -236,9 +250,9 @@ function App() {
     let cumulative = 0;
     return sorted.map((row) => {
       cumulative += row.defects;
-      return { ...row, cumulative: Number(((cumulative / total) * 100).toFixed(0)) };
+      return { ...row, name: t(row.name), cumulative: Number(((cumulative / total) * 100).toFixed(0)) };
     });
-  }, [filtered]);
+  }, [filtered, t]);
 
   const pieData = departmentData.map((row) => ({ name: row.name, value: row.scrap }));
   const machinesForDept = machines.filter((machine) => machine.department === form.department || !machine.department);
@@ -297,26 +311,26 @@ function App() {
       };
       const errors = validateProduction(row);
       if (errors.length) {
-        setStatus(`A corriger avant sauvegarde: ${errors.join(', ')}`);
+        setStatus({ key: 'A corriger avant sauvegarde: {fields}', fields: errors, error: true });
         return;
       }
       const saved = await insertRows('production_entries', [row]);
       setEntries((current) => [...saved, ...current]);
-      setStatus(`Ligne validee et sauvegardee: ${row.department} / ${row.machine_code}`);
+      setStatus({ key: 'Ligne validee et sauvegardee: {department} / {machine}', department: row.department, machine: row.machine_code });
     } catch (error) {
-      setStatus(`Erreur sauvegarde: ${error.message}`);
+      setStatus({ key: 'Erreur sauvegarde: {error}', values: { error: error.message }, error: true });
     }
   }
 
   async function deleteProduction(row) {
-    const ok = window.confirm(`Supprimer cette saisie ?\n${row.production_date} - ${row.department} - ${row.machine_code}`);
+    const ok = window.confirm(`${t('Supprimer cette saisie ?')}\n${formatDate(row.production_date)} - ${t(row.department)} - ${row.machine_code}`);
     if (!ok) return;
     try {
       await deleteRow('production_entries', row);
       setEntries((current) => current.filter((item) => item !== row && item.id !== row.id));
-      setStatus(`Saisie supprimee: ${row.department} / ${row.machine_code}`);
+      setStatus({ key: 'Saisie supprimee: {department} / {machine}', department: row.department, machine: row.machine_code });
     } catch (error) {
-      setStatus(`Erreur suppression: ${error.message}`);
+      setStatus({ key: 'Erreur suppression: {error}', values: { error: error.message }, error: true });
     }
   }
 
@@ -338,7 +352,7 @@ function App() {
       }).filter((row) => row.code);
       const saved = await insertRows('machines', parsed);
       setMachines((current) => [...saved, ...current]);
-      setStatus(`${saved.length} machines importees depuis Excel`);
+      setStatus({ key: '{count} machines importees depuis Excel', count: saved.length });
     } else {
       const parsed = rows.map((row, index) => {
         const reference = pick(row, ['reference', 'ref', 'code', 'refproduit', 'article']) || `REF-${index + 1}`;
@@ -351,7 +365,7 @@ function App() {
       }).filter((row) => row.reference);
       const saved = await insertRows('product_references', parsed);
       setReferences((current) => [...saved, ...current]);
-      setStatus(`${saved.length} references produit importees depuis Excel`);
+      setStatus({ key: '{count} references produit importees depuis Excel', count: saved.length });
     }
     event.target.value = '';
   }
@@ -361,7 +375,7 @@ function App() {
     setMachines(seedMachines);
     setReferences(seedReferences);
     setAssignments(seedAssignments);
-    setStatus('Donnees videes: pret pour import Excel et saisie');
+    setStatus({ key: 'Donnees videes: pret pour import Excel et saisie' });
   }
 
   return (
@@ -369,63 +383,69 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <div>
-            <h1>Dashboard Qualite & Production</h1>
-            <p>Suivi par departement: Injection, Soudure, Metallisation, Assemblage, Serigraphie</p>
+            <h1>{t("Dashboard Qualite & Production")}</h1>
+            <p>{t("Suivi par departement: Injection, Soudure, Metallisation, Assemblage, Serigraphie")}</p>
           </div>
         </div>
         <div className="status-strip">
-          <button className="history-top-button" type="button" onClick={() => setShowHistoryWindow(true)}><History size={18} />Historique</button>
-          <CalendarDays size={24} />
-          <div><strong>Mercredi 10 septembre 2025</strong><span>14:28</span></div>
+          <LanguageSwitcher language={language} onChange={setLanguage} t={t} />
+          <button className="history-top-button" type="button" onClick={() => setShowHistoryWindow(true)}><History size={18} />{t("Historique")}</button>
+          <LiveClock locale={locale} />
           <div className="divider" />
-          <div><strong>Qualite aujourd'hui</strong><span>Performance demain</span></div>
+          <div><strong>{t("Qualite aujourd'hui")}</strong><span>{t("Performance demain")}</span></div>
         </div>
       </header>
 
       <section className="filters">
-        <label>Date debut<input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></label>
-        <label>Date fin<input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></label>
-        <label>Machine / Poste<select value={filters.machine} onChange={(e) => setFilters({ ...filters, machine: e.target.value })}><option>Tous</option>{machines.map((machine) => <option key={machine.id || machine.code}>{machine.code}</option>)}</select></label>
-        <label>Reference produit<select value={filters.reference} onChange={(e) => setFilters({ ...filters, reference: e.target.value })}><option>Tous</option>{references.map((ref) => <option key={ref.id || ref.reference}>{ref.reference}</option>)}</select></label>
-        <label>OF / Bon<select value={filters.workOrder} onChange={(e) => setFilters({ ...filters, workOrder: e.target.value })}><option>Tous</option>{[...new Set(entries.map((row) => row.work_order).filter(Boolean))].map((of) => <option key={of}>{of}</option>)}</select></label>
-        <button className="primary" type="button"><Search size={18} />Appliquer</button>
-        <button type="button" onClick={resetDemo}><RefreshCcw size={18} />Reinitialiser</button>
+        <label>{t("Date debut")}<input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></label>
+        <label>{t("Date fin")}<input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></label>
+        <label>{t("Machine / Poste")}<select value={filters.machine} onChange={(e) => setFilters({ ...filters, machine: e.target.value })}><option value="Tous">{t("Tous")}</option>{machines.map((machine) => <option key={machine.id || machine.code} value={machine.code}>{machine.code}</option>)}</select></label>
+        <label>{t("Reference produit")}<select value={filters.reference} onChange={(e) => setFilters({ ...filters, reference: e.target.value })}><option value="Tous">{t("Tous")}</option>{references.map((ref) => <option key={ref.id || ref.reference} value={ref.reference}>{t(ref.reference)}</option>)}</select></label>
+        <label>{t("OF / Bon")}<select value={filters.workOrder} onChange={(e) => setFilters({ ...filters, workOrder: e.target.value })}><option value="Tous">{t("Tous")}</option>{[...new Set(entries.map((row) => row.work_order).filter(Boolean))].map((of) => <option key={of} value={of}>{of}</option>)}</select></label>
+        <button className="primary" type="button"><Search size={18} />{t("Appliquer")}</button>
+        <button type="button" onClick={resetDemo}><RefreshCcw size={18} />{t("Reinitialiser")}</button>
       </section>
 
       <section className="dept-tabs">
         {departments.map(({ key, subtitle, icon: Icon }) => (
           <button className={activeDept === key ? 'active' : ''} type="button" key={key} onClick={() => selectDepartment(key)}>
             <Icon size={42} />
-            <span><strong>{key}</strong><small>{subtitle}</small></span>
+            <span><strong>{t(key)}</strong><small>{t(subtitle)}</small></span>
           </button>
         ))}
       </section>
 
-      <Panel title="Feuille de saisie production" className="sheet-panel">
+      <Panel title={t("Feuille de saisie production")} className="sheet-panel">
         <form className="sheet-form" onSubmit={addProduction}>
-          <label>Date<input type="date" value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
-          <label>Departement<select value={form.department} onChange={(e) => selectDepartment(e.target.value)}>{departments.map((dept) => <option key={dept.key}>{dept.key}</option>)}</select></label>
-          <label>Machine / Poste<select value={form.machine_code} onChange={(e) => handleMachineChange(e.target.value)}><option value="">Choisir machine</option>{machinesForDept.map((machine) => <option key={machine.id || machine.code} value={machine.code}>{machine.code} - {machine.label}</option>)}</select></label>
-          <label>Reference machine<select value={form.product_reference} onChange={(e) => setForm({ ...form, product_reference: e.target.value })}><option value="">Choisir reference</option>{referencesForDept.map((ref) => <option key={ref.id || ref.reference} value={ref.reference}>{ref.reference}</option>)}</select></label>
-          <label>OF / Bon<input placeholder="OF / Bon" value={form.work_order} onChange={(e) => setForm({ ...form, work_order: e.target.value })} /></label>
-          <label>Qte bonne<input type="number" min="0" value={form.good_qty} onChange={(e) => setForm({ ...form, good_qty: e.target.value })} /></label>
-          <label>Qte rebut<input type="number" min="0" value={form.scrap_qty} onChange={(e) => setForm({ ...form, scrap_qty: e.target.value })} /></label>
-          <label>Rebut justifie<input type="number" min="0" value={form.justified_scrap_qty} onChange={(e) => setForm({ ...form, justified_scrap_qty: e.target.value })} /></label>
-          <label>Purge kg<input type="number" min="0" step="0.1" value={form.purge_kg} onChange={(e) => setForm({ ...form, purge_kg: e.target.value })} /></label>
-          <label>Pareto defaut<select value={form.defect_type} onChange={(e) => setForm({ ...form, defect_type: e.target.value })}>{defectTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
-          <label>Heure travail<input type="number" min="0" step="0.1" value={form.work_hours} onChange={(e) => setForm({ ...form, work_hours: e.target.value })} /></label>
-          <label>MOD<input type="number" min="0" value={form.mod_count} onChange={(e) => setForm({ ...form, mod_count: e.target.value })} /></label>
-          <label>Nom MOD<input placeholder="Noms operateurs" value={form.operator_names} onChange={(e) => setForm({ ...form, operator_names: e.target.value })} /></label>
-          <label>Total heure MOD<input type="number" min="0" step="0.1" value={form.mod_hours} onChange={(e) => setForm({ ...form, mod_hours: e.target.value })} /></label>
-          <button className="primary sheet-save" type="submit"><Save size={18} />Sauvegarder la ligne</button>
+          <label>{t("Date")}<input type="date" value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
+          <label>{t("Departement")}<select value={form.department} onChange={(e) => selectDepartment(e.target.value)}>{departments.map((dept) => <option key={dept.key} value={dept.key}>{t(dept.key)}</option>)}</select></label>
+          <label>{t("Machine / Poste")}<select value={form.machine_code} onChange={(e) => handleMachineChange(e.target.value)}><option value="">{t("Choisir machine")}</option>{machinesForDept.map((machine) => <option key={machine.id || machine.code} value={machine.code}>{machine.code} - {t(machine.label)}</option>)}</select></label>
+          <label>{t("Reference machine")}<select value={form.product_reference} onChange={(e) => setForm({ ...form, product_reference: e.target.value })}><option value="">{t("Choisir reference")}</option>{referencesForDept.map((ref) => <option key={ref.id || ref.reference} value={ref.reference}>{t(ref.reference)}</option>)}</select></label>
+          <label>{t("OF / Bon")}<input placeholder={t("OF / Bon")} value={form.work_order} onChange={(e) => setForm({ ...form, work_order: e.target.value })} /></label>
+          <label>{t("Qte bonne")}<input type="number" min="0" value={form.good_qty} onChange={(e) => setForm({ ...form, good_qty: e.target.value })} /></label>
+          <label>{t("Qte rebut")}<input type="number" min="0" value={form.scrap_qty} onChange={(e) => setForm({ ...form, scrap_qty: e.target.value })} /></label>
+          <label>{t("Rebut justifie")}<input type="number" min="0" value={form.justified_scrap_qty} onChange={(e) => setForm({ ...form, justified_scrap_qty: e.target.value })} /></label>
+          <label>{t("Purge kg")}<input type="number" min="0" step="0.1" value={form.purge_kg} onChange={(e) => setForm({ ...form, purge_kg: e.target.value })} /></label>
+          <label>{t("Pareto defaut")}<select value={form.defect_type} onChange={(e) => setForm({ ...form, defect_type: e.target.value })}>{defectTypes.map((type) => <option key={type} value={type}>{t(type)}</option>)}</select></label>
+          <label>{t("Heure travail")}<input type="number" min="0" step="0.1" value={form.work_hours} onChange={(e) => setForm({ ...form, work_hours: e.target.value })} /></label>
+          <label>{t("MOD")}<input type="number" min="0" value={form.mod_count} onChange={(e) => setForm({ ...form, mod_count: e.target.value })} /></label>
+          <label>{t("Nom MOD")}<input placeholder={t("Noms operateurs")} value={form.operator_names} onChange={(e) => setForm({ ...form, operator_names: e.target.value })} /></label>
+          <label>{t("Total heure MOD")}<input type="number" min="0" step="0.1" value={form.mod_hours} onChange={(e) => setForm({ ...form, mod_hours: e.target.value })} /></label>
+          <button className="primary sheet-save" type="submit"><Save size={18} />{t("Sauvegarder la ligne")}</button>
         </form>
         <div className="import-row">
-          <span className={status.startsWith('A corriger') || status.startsWith('Erreur') ? 'save-status bad-status' : 'save-status'}>{status}</span>
+          <span role="status" aria-live="polite" className={status.error ? 'save-status bad-status' : 'save-status'}>{t(status.key, {
+            ...status.values,
+            department: t(status.department),
+            machine: status.machine,
+            count: status.count?.toLocaleString(locale),
+            fields: status.fields?.map((field) => t(field)).join(locale === 'ar' ? '، ' : ', '),
+          })}</span>
         </div>
       </Panel>
 
       <section className="grid charts">
-        <Panel title="Pareto des defauts" className="span4">
+        <Panel title={t("Pareto des defauts")} className="span4">
           <ResponsiveContainer height={250}>
             <ComposedChart data={defectData}>
               <CartesianGrid stroke="#dbe5f2" />
@@ -433,12 +453,12 @@ function App() {
               <YAxis yAxisId="left" />
               <YAxis yAxisId="right" orientation="right" domain={[0, 100]} />
               <Tooltip />
-              <Bar yAxisId="left" dataKey="defects" fill="#1d7fe2" radius={[4, 4, 0, 0]} name="Nombre de defauts" />
-              <Line yAxisId="right" dataKey="cumulative" stroke="#ff8124" strokeWidth={3} name="% cumule" />
+              <Bar yAxisId="left" dataKey="defects" fill="#1d7fe2" radius={[4, 4, 0, 0]} name={t("Nombre de defauts")} />
+              <Line yAxisId="right" dataKey="cumulative" stroke="#ff8124" strokeWidth={3} name={t("% cumule")} />
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
-        <Panel title="Comparatif par departement" className="span4">
+        <Panel title={t("Comparatif par departement")} className="span4">
           <ResponsiveContainer height={250}>
             <ComposedChart data={departmentData}>
               <CartesianGrid stroke="#dbe5f2" />
@@ -447,13 +467,13 @@ function App() {
               <YAxis yAxisId="right" orientation="right" domain={[0, 12]} />
               <Tooltip />
               <Legend />
-              <Bar yAxisId="left" dataKey="production" fill="#1d7fe2" name="Production" radius={[4, 4, 0, 0]} />
-              <Bar yAxisId="left" dataKey="scrap" fill="#e23d3d" name="Rebut" radius={[4, 4, 0, 0]} />
-              <Line yAxisId="right" dataKey="rate" stroke="#ff8124" strokeWidth={0} dot={{ r: 5 }} name="Taux de rebut (%)" />
+              <Bar yAxisId="left" dataKey="production" fill="#1d7fe2" name={t("Production")} radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="scrap" fill="#e23d3d" name={t("Rebut")} radius={[4, 4, 0, 0]} />
+              <Line yAxisId="right" dataKey="rate" stroke="#ff8124" strokeWidth={0} dot={{ r: 5 }} name={t("Taux de rebut (%)")} />
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
-        <Panel title="Repartition du rebut par departement" className="span4">
+        <Panel title={t("Repartition du rebut par departement")} className="span4">
           <div className="donut-row">
             <ResponsiveContainer width="55%" height={250}>
               <PieChart>
@@ -465,7 +485,7 @@ function App() {
             </ResponsiveContainer>
             <div className="legend-list">
               {pieData.map((row, index) => (
-                <div key={row.name}><i style={{ background: colors[index] }} />{row.name}<strong>{row.value.toLocaleString('fr-FR')}</strong></div>
+                <div key={row.name}><i style={{ background: colors[index] }} />{row.name}<strong>{row.value.toLocaleString(locale)}</strong></div>
               ))}
             </div>
           </div>
@@ -473,53 +493,53 @@ function App() {
       </section>
 
       <section className="workbench">
-        <Panel title="Affectation MOD">
+        <Panel title={t("Affectation MOD")}>
           <table>
-            <thead><tr><th>Machine / Poste</th><th>Nom MOD / operateur(s)</th><th>Nb MOD</th><th>Total heure MOD</th></tr></thead>
+            <thead><tr><th>{t("Machine / Poste")}</th><th>{t("Nom MOD / operateur(s)")}</th><th>{t("Nb MOD")}</th><th>{t("Total heure MOD")}</th></tr></thead>
             <tbody>
-              {assignmentRows.map((row, index) => <tr key={row.id || `${row.machine_code}-${index}`}><td>{row.machine_code}</td><td>{row.operator_names}</td><td>{row.mod_count}</td><td>{toNumber(row.mod_hours).toLocaleString('fr-FR')}</td></tr>)}
-              {!assignmentRows.length && <tr><td colSpan="4" className="empty-row">Aucune affectation MOD saisie.</td></tr>}
+              {assignmentRows.map((row, index) => <tr key={row.id || `${row.machine_code}-${index}`}><td>{row.machine_code}</td><td>{row.operator_names}</td><td>{row.mod_count}</td><td>{toNumber(row.mod_hours).toLocaleString(locale)}</td></tr>)}
+              {!assignmentRows.length && <tr><td colSpan="4" className="empty-row">{t("Aucune affectation MOD saisie.")}</td></tr>}
             </tbody>
           </table>
         </Panel>
       </section>
 
-      <Panel title="Detail de la production">
+      <Panel title={t("Detail de la production")}>
         <table>
-          <thead><tr><th>Date</th><th>Departement</th><th>Machine / Poste</th><th>Reference machine</th><th>OF / Bon</th><th>Qte bonne</th><th>Qte rebut</th><th>Rebut justifie</th><th>Purge kg</th><th>Pareto defaut</th><th>Heure travail</th><th>MOD</th><th>Nom MOD</th><th>Total H MOD</th><th></th></tr></thead>
+          <thead><tr><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Qte bonne")}</th><th>{t("Qte rebut")}</th><th>{t("Rebut justifie")}</th><th>{t("Purge kg")}</th><th>{t("Pareto defaut")}</th><th>{t("Heure travail")}</th><th>{t("MOD")}</th><th>{t("Nom MOD")}</th><th>{t("Total H MOD")}</th><th></th></tr></thead>
           <tbody>
             {filtered.map((row, index) => (
               <tr key={row.id || index}>
-                <td>{row.production_date}</td><td>{row.department}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString('fr-FR')}</td><td>{toNumber(row.scrap_qty).toLocaleString('fr-FR')}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString('fr-FR')}</td><td>{row.purge_kg}</td><td>{row.defect_type}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
-                <td><button className="icon-only danger-icon" type="button" onClick={() => deleteProduction(row)}><Trash2 size={16} /></button></td>
+                <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{t(row.product_reference)}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td>{t(row.defect_type)}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
+                <td><button aria-label={t("Supprimer")} className="icon-only danger-icon" type="button" onClick={() => deleteProduction(row)}><Trash2 size={16} /></button></td>
               </tr>
             ))}
-            {!filtered.length && <tr><td colSpan="15" className="empty-row">Aucune donnee. Choisissez un departement puis ajoutez une ligne de production.</td></tr>}
+            {!filtered.length && <tr><td colSpan="15" className="empty-row">{t("Aucune donnee. Choisissez un departement puis ajoutez une ligne de production.")}</td></tr>}
           </tbody>
         </table>
       </Panel>
 
       {showHistoryWindow && (
-        <div className="history-modal" role="dialog" aria-modal="true" aria-label="Fenetre historique des ajouts">
+        <div className="history-modal" role="dialog" aria-modal="true" aria-label={t("Fenetre historique des ajouts")}>
           <section className="history-window">
             <header className="history-window-head">
               <div>
-                <h2>Historique complet des ajouts</h2>
-                <p>{entries.length} ligne(s) enregistree(s)</p>
+                <h2>{t("Historique complet des ajouts")}</h2>
+                <p>{t('{count} ligne(s) enregistree(s)', { count: entries.length.toLocaleString(locale) })}</p>
               </div>
-              <button className="icon-only" type="button" onClick={() => setShowHistoryWindow(false)} aria-label="Fermer historique"><X size={18} /></button>
+              <button className="icon-only" type="button" onClick={() => setShowHistoryWindow(false)} aria-label={t("Fermer historique")}><X size={18} /></button>
             </header>
             <div className="history-window-body">
               <table>
-                <thead><tr><th>Date</th><th>Departement</th><th>Machine / Poste</th><th>Reference machine</th><th>OF / Bon</th><th>Qte bonne</th><th>Qte rebut</th><th>Rebut justifie</th><th>Purge kg</th><th>Pareto defaut</th><th>Heure travail</th><th>MOD</th><th>Nom MOD</th><th>Total H MOD</th><th>Action</th></tr></thead>
+                <thead><tr><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Qte bonne")}</th><th>{t("Qte rebut")}</th><th>{t("Rebut justifie")}</th><th>{t("Purge kg")}</th><th>{t("Pareto defaut")}</th><th>{t("Heure travail")}</th><th>{t("MOD")}</th><th>{t("Nom MOD")}</th><th>{t("Total H MOD")}</th><th>{t("Action")}</th></tr></thead>
                 <tbody>
                   {entries.map((row, index) => (
                     <tr key={row.id || index}>
-                      <td>{row.production_date}</td><td>{row.department}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString('fr-FR')}</td><td>{toNumber(row.scrap_qty).toLocaleString('fr-FR')}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString('fr-FR')}</td><td>{row.purge_kg}</td><td>{row.defect_type}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
-                      <td><button className="danger-button compact-danger" type="button" onClick={() => deleteProduction(row)}><Trash2 size={16} />Supprimer</button></td>
+                      <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{t(row.product_reference)}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td>{t(row.defect_type)}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
+                      <td><button className="danger-button compact-danger" type="button" onClick={() => deleteProduction(row)}><Trash2 size={16} />{t("Supprimer")}</button></td>
                     </tr>
                   ))}
-                  {!entries.length && <tr><td colSpan="15" className="empty-row">Aucun historique pour le moment.</td></tr>}
+                  {!entries.length && <tr><td colSpan="15" className="empty-row">{t("Aucun historique pour le moment.")}</td></tr>}
                 </tbody>
               </table>
             </div>
