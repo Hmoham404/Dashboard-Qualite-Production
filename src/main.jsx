@@ -3,15 +3,14 @@ import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
 import {
+  Area,
   BarChart,
   Bar,
   CartesianGrid,
-  Cell,
   ComposedChart,
   Legend,
   Line,
-  Pie,
-  PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -24,13 +23,16 @@ import {
   History,
   Printer,
   RefreshCcw,
-  Save,
   Search,
   Wrench,
   Settings,
   Trash2,
   Users,
   X,
+  Edit3,
+  AlertCircle,
+  CheckCircle2,
+  FileDown,
 } from 'lucide-react';
 import { initialMachines, initialReferences } from './initialCatalog';
 import './styles.css';
@@ -58,11 +60,40 @@ const defectTypesByDepartment = {
   Injection: ['Bavure', 'Retassure', 'Effet diesel', 'Peau d orange', 'Ligne de soudure', 'Manque matiere', 'Arrachement', 'Givrage', 'Trace d ejecteur', 'Trace d huile', 'Autres']
 };
 
-const colors = ['#1d7fe2', '#35ae72', '#ff8124', '#7657c9', '#e23d3d', '#0f5f83'];
+const scrapTargetsByDepartment = {
+  Injection: 2,
+  Soudure: 0.5,
+  Metallisation: 7,
+  Assemblage: 0.2,
+  Serigraphie: 0.2,
+};
+const scrapRateColors = {
+  over: '#e23d3d',
+  equal: '#d8a80e',
+  under: '#1e9d5b',
+};
 const seedEntries = [];
 const seedMachines = initialMachines;
 const seedReferences = initialReferences;
 const seedAssignments = [];
+
+function isoDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function startOfWeek(date) {
+  const start = new Date(date);
+  const day = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - day);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
 
 function cleanKey(key = '') {
   return key.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
@@ -76,6 +107,54 @@ function pick(row, names) {
 function toNumber(value) {
   const parsed = Number(String(value ?? 0).replace(',', '.').replace(/[^\d.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function extractArticleReference(note = '') {
+  return String(note).match(/REF_ARTICLE:\s*(.*)/)?.[1]?.split('\n')[0]?.trim() || '';
+}
+
+function extractQualityNote(note = '') {
+  return String(note)
+    .replace(/^REF_ARTICLE:.*$/m, '')
+    .replace(/^NOTE_QUALITE:\s*/m, '')
+    .trim();
+}
+
+function buildQualityNote(articleReference, qualityNote) {
+  return [
+    articleReference?.trim() ? `REF_ARTICLE: ${articleReference.trim()}` : '',
+    qualityNote?.trim() ? `NOTE_QUALITE: ${qualityNote.trim()}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function scrapRateStatus(rate, targetRate) {
+  if (Math.abs(rate - targetRate) < 0.05) return 'equal';
+  return rate > targetRate ? 'over' : 'under';
+}
+
+function RateDot({ cx, cy, payload, r = 6 }) {
+  if (cx == null || cy == null) return null;
+  const status = scrapRateStatus(toNumber(payload?.rate), toNumber(payload?.targetRate));
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={r}
+      fill={scrapRateColors[status]}
+      stroke="#fff"
+      strokeWidth="2"
+    />
+  );
+}
+
+function RateTargetLabel({ x, y, payload }) {
+  if (x == null || y == null || !payload) return null;
+  return (
+    <text x={x} y={y - 18} textAnchor="middle" className="rate-target-label">
+      <tspan x={x}>{payload.rate}%</tspan>
+      <tspan x={x} dy="13">{`T ${payload.targetRate}%`}</tspan>
+    </text>
+  );
 }
 
 function defaultDefect(department) {
@@ -93,14 +172,28 @@ function validateProduction(row) {
   const errors = [];
   if (!row.department) errors.push('Departement');
   if (!row.machine_code) errors.push('Machine / Poste');
-  if (!row.product_reference) errors.push('Reference machine');
+  if (!row.product_reference?.trim()) errors.push('Reference machine');
   if (!row.work_order?.trim()) errors.push('OF / Bon');
-  if (!row.defect_type) errors.push('Pareto defaut');
-  if (toNumber(row.good_qty) <= 0 && toNumber(row.scrap_qty) <= 0) errors.push('qte bonne ou qte rebut');
-  if (toNumber(row.justified_scrap_qty) > toNumber(row.scrap_qty)) errors.push('rebut justifie <= qte rebut');
+  if (toNumber(row.good_qty) <= 0) errors.push('Qte bonne');
   if (toNumber(row.mod_count) > 0 && !row.operator_names?.trim()) errors.push('Nom MOD');
   if (toNumber(row.mod_count) > 0 && toNumber(row.mod_hours) <= 0) errors.push('Total heure MOD');
   return errors;
+}
+
+function validateQuality(row) {
+  const errors = [];
+  if (!(row.article_reference || extractArticleReference(row.note)).trim()) errors.push('Reference article');
+  if (toNumber(row.scrap_qty) > 0 && !row.defect_type) errors.push('Pareto defaut');
+  if (toNumber(row.justified_scrap_qty) > toNumber(row.scrap_qty)) errors.push('rebut justifie <= qte rebut');
+  return errors;
+}
+
+function completionStatus(row) {
+  const missingFields = [...validateProduction(row), ...validateQuality(row)];
+  return {
+    status: missingFields.length ? 'A completer' : 'Complete',
+    missingFields,
+  };
 }
 
 function mergeUnique(rows, fallback, key) {
@@ -121,6 +214,10 @@ function localRead(key, fallback) {
 
 function localWrite(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function cleanDbRow(row) {
+  return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined));
 }
 
 async function loadTable(name, fallback) {
@@ -148,6 +245,49 @@ async function insertRows(name, rows) {
   const conflict = name === 'machines' ? 'code' : name === 'product_references' ? 'reference' : undefined;
   const request = conflict ? supabase.from(name).upsert(rows, { onConflict: conflict }) : supabase.from(name).insert(rows);
   const { data, error } = await request.select();
+  if (error) throw error;
+  return data;
+}
+
+async function saveRows(name, rows) {
+  if (!rows.length) return rows;
+  const dbRows = rows.map((row) => {
+    const clean = cleanDbRow(row);
+    if (!clean.id) delete clean.id;
+    return clean;
+  });
+  if (!supabase) {
+    const existing = localRead(name, []);
+    const key = name === 'machines' ? 'code' : name === 'product_references' ? 'reference' : null;
+    const savedRows = dbRows.map((row) => ({ ...row, id: row.id || `local-${Date.now()}-${Math.random().toString(36).slice(2)}` }));
+    const next = [
+      ...savedRows,
+      ...existing.filter((item) => {
+        if (savedRows.some((row) => row.id && item.id === row.id)) return false;
+        return key ? !savedRows.some((row) => row[key] === item[key]) : true;
+      })
+    ];
+    localWrite(name, next);
+    return savedRows;
+  }
+  if (name === 'production_entries') {
+    const existingRows = dbRows.filter((row) => row.id);
+    const newRows = dbRows.filter((row) => !row.id);
+    const saved = [];
+    if (newRows.length) {
+      const { data, error } = await supabase.from(name).insert(newRows).select();
+      if (error) throw error;
+      saved.push(...(data || []));
+    }
+    if (existingRows.length) {
+      const { data, error } = await supabase.from(name).upsert(existingRows, { onConflict: 'id' }).select();
+      if (error) throw error;
+      saved.push(...(data || []));
+    }
+    return saved;
+  }
+  const conflict = name === 'machines' ? 'code' : name === 'product_references' ? 'reference' : 'id';
+  const { data, error } = await supabase.from(name).upsert(dbRows, { onConflict: conflict }).select();
   if (error) throw error;
   return data;
 }
@@ -182,8 +322,11 @@ function App() {
   const [assignments, setAssignments] = useState(seedAssignments);
   const [status, setStatus] = useState({ key: supabase ? 'Connecte a Supabase' : 'Mode local: ajoutez .env pour Supabase' });
   const [showHistoryWindow, setShowHistoryWindow] = useState(false);
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
+  const [serviceMode, setServiceMode] = useState('production');
   const [filters, setFilters] = useState({ ...currentDateRange(), machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
   const [form, setForm] = useState({
+    id: '',
     production_date: new Date().toISOString().slice(0, 10),
     department: 'Injection',
     machine_code: '',
@@ -198,7 +341,10 @@ function App() {
     mod_hours: 0,
     operator_names: '',
     defect_type: 'Bavure',
-    note: ''
+    article_reference: '',
+    note: '',
+    entry_status: 'Qualite a completer',
+    missing_fields: []
   });
 
   useEffect(() => {
@@ -239,8 +385,70 @@ function App() {
     const rows = entries.filter((entry) => entry.department === dept.key);
     const production = rows.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
     const scrap = rows.reduce((sum, row) => sum + toNumber(row.scrap_qty), 0);
-    return { name: t(dept.key), production, scrap, rate: production + scrap ? Number(((scrap / (production + scrap)) * 100).toFixed(1)) : 0 };
+    const rate = production + scrap ? Number(((scrap / (production + scrap)) * 100).toFixed(1)) : 0;
+    return { key: dept.key, name: t(dept.key), production, scrap, rate, targetRate: scrapTargetsByDepartment[dept.key] ?? 0 };
   }), [entries, t]);
+
+  const factoryEvaluationData = useMemo(() => {
+    const now = new Date();
+    const scoreBucket = (bucket) => {
+      const rows = entries.filter((entry) => entry.production_date >= bucket.from && entry.production_date <= bucket.to);
+      const good = rows.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
+      const scrap = rows.reduce((sum, row) => sum + toNumber(row.scrap_qty), 0);
+      const total = good + scrap;
+      return {
+        ...bucket,
+        good,
+        total,
+        value: total ? Number(((good / total) * 100).toFixed(1)) : null,
+      };
+    };
+    const buckets = [];
+    for (let offset = 2; offset >= 0; offset -= 1) {
+      const month = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+      const isCurrentMonth = month.getFullYear() === now.getFullYear() && month.getMonth() === now.getMonth();
+      buckets.push(scoreBucket({
+        axisKey: `month-${offset}`,
+        label: month.toLocaleDateString(locale, { month: 'short' }),
+        section: 'quarter',
+        from: isoDate(month),
+        to: isoDate(isCurrentMonth ? now : monthEnd),
+      }));
+    }
+    buckets.push({ axisKey: 'sep-month', label: '', value: null, separator: true });
+
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    let cursor = startOfWeek(monthStart);
+    let week = 1;
+    while (cursor <= now) {
+      const weekEnd = addDays(cursor, 6);
+      buckets.push(scoreBucket({
+        axisKey: `week-${week}`,
+        label: `S${week}`,
+        section: 'month',
+        from: isoDate(cursor < monthStart ? monthStart : cursor),
+        to: isoDate(weekEnd > now ? now : weekEnd),
+      }));
+      cursor = addDays(cursor, 7);
+      week += 1;
+    }
+    buckets.push({ axisKey: 'sep-week', label: '', value: null, separator: true });
+
+    const weekStart = startOfWeek(now);
+    const currentWeekDay = (now.getDay() + 6) % 7;
+    for (let index = 0; index <= currentWeekDay; index += 1) {
+      const day = addDays(weekStart, index);
+      buckets.push(scoreBucket({
+        axisKey: `day-${index}`,
+        label: day.toLocaleDateString(locale, { weekday: 'short' }),
+        section: 'week',
+        from: isoDate(day),
+        to: isoDate(day),
+      }));
+    }
+    return buckets;
+  }, [entries, locale]);
 
   const defectData = useMemo(() => {
     const map = new Map();
@@ -254,10 +462,20 @@ function App() {
     });
   }, [filtered, t]);
 
-  const pieData = departmentData.map((row) => ({ name: row.name, value: row.scrap }));
   const machinesForDept = machines.filter((machine) => machine.department === form.department || !machine.department);
   const referencesForDept = references.filter((ref) => ref.family === form.department || !ref.family);
+  const articleReferences = useMemo(() => {
+    return [...new Set(entries.map((row) => row.product_reference).filter(Boolean))].sort();
+  }, [entries]);
   const defectTypes = defectTypesByDepartment[form.department] || ['Autres'];
+  const incompleteEntries = useMemo(() => entries.filter((row) => {
+    const productionMissing = validateProduction(row);
+    const qualityMissing = validateQuality(row);
+    const computedStatus = row.entry_status || (productionMissing.length || qualityMissing.length ? 'A completer' : 'Complete');
+    return computedStatus !== 'Complete' || productionMissing.length > 0 || qualityMissing.length > 0;
+  }), [entries]);
+
+  const qualityQueue = useMemo(() => incompleteEntries.filter((row) => validateProduction(row).length === 0), [incompleteEntries]);
 
   const assignmentRows = useMemo(() => {
     const map = new Map();
@@ -280,22 +498,101 @@ function App() {
       ...form,
       department,
       machine_code: '',
-      product_reference: '',
       defect_type: defaultDefect(department)
     });
   }
 
+  function emptyForm(overrides = {}) {
+    return {
+      id: '',
+      production_date: new Date().toISOString().slice(0, 10),
+      department: activeDept,
+      machine_code: '',
+      product_reference: '',
+      work_order: '',
+      good_qty: 0,
+      scrap_qty: 0,
+      justified_scrap_qty: 0,
+      purge_kg: 0,
+      work_hours: 0,
+      mod_count: 1,
+      mod_hours: 0,
+      operator_names: '',
+      defect_type: defaultDefect(activeDept),
+      note: '',
+      article_reference: '',
+      entry_status: 'Qualite a completer',
+      missing_fields: [],
+      ...overrides,
+    };
+  }
+
+  function editProduction(row, targetService) {
+    setActiveDept(row.department);
+    setServiceMode(targetService || (validateProduction(row).length ? 'production' : 'quality'));
+    setForm(emptyForm({
+      ...row,
+      work_hours: row.work_hours ?? row.machine_hours ?? 0,
+      article_reference: extractArticleReference(row.note),
+      note: extractQualityNote(row.note),
+      entry_status: row.entry_status || 'Qualite a completer',
+      missing_fields: row.missing_fields || completionStatus(row).missingFields,
+    }));
+    setStatus({ key: 'Ligne chargee pour completion: {department} / {machine}', department: row.department, machine: row.machine_code || t('Non renseigne') });
+  }
+
   function handleMachineChange(machineCode) {
-    const machine = machines.find((item) => item.code === machineCode);
     setForm({
       ...form,
-      machine_code: machineCode,
-      product_reference: machine?.reference || form.product_reference
+      machine_code: machineCode
     });
   }
 
-  async function addProduction(event) {
+  async function saveProductionService(event) {
     event.preventDefault();
+    try {
+      const row = {
+        ...form,
+        id: form.id || undefined,
+        good_qty: toNumber(form.good_qty),
+        scrap_qty: toNumber(form.scrap_qty),
+        justified_scrap_qty: toNumber(form.justified_scrap_qty),
+        purge_kg: toNumber(form.purge_kg),
+        machine_hours: toNumber(form.work_hours),
+        work_hours: toNumber(form.work_hours),
+        mod_count: toNumber(form.mod_count),
+        mod_hours: toNumber(form.mod_hours),
+        operator_names: form.operator_names.trim()
+      };
+      const productionMissing = validateProduction(row);
+      if (productionMissing.length) {
+        setStatus({ key: 'A corriger avant sauvegarde: {fields}', fields: productionMissing, error: true });
+        return;
+      }
+      const payload = {
+        ...row,
+        article_reference: undefined,
+        note: '',
+        entry_status: 'Qualite a completer',
+        missing_fields: ['Controle qualite'],
+      };
+      delete payload.article_reference;
+      const saved = await saveRows('production_entries', [payload]);
+      setEntries((current) => [...saved, ...current.filter((item) => item.id !== saved[0]?.id)]);
+      setForm(emptyForm({ department: row.department, defect_type: defaultDefect(row.department) }));
+      setServiceMode('quality');
+      setStatus({ key: 'Ligne envoyee au service qualite: {department} / {machine}', department: row.department, machine: row.machine_code });
+    } catch (error) {
+      setStatus({ key: 'Erreur sauvegarde: {error}', values: { error: error.message }, error: true });
+    }
+  }
+
+  async function saveQualityService(event) {
+    event.preventDefault();
+    if (!form.id) {
+      setStatus({ key: 'Selectionnez une ligne production a controler', error: true });
+      return;
+    }
     try {
       const row = {
         ...form,
@@ -309,29 +606,114 @@ function App() {
         mod_hours: toNumber(form.mod_hours),
         operator_names: form.operator_names.trim()
       };
-      const errors = validateProduction(row);
-      if (errors.length) {
-        setStatus({ key: 'A corriger avant sauvegarde: {fields}', fields: errors, error: true });
+      const qualityMissing = validateQuality(row);
+      if (qualityMissing.length) {
+        setStatus({ key: 'A corriger avant sauvegarde: {fields}', fields: qualityMissing, error: true });
         return;
       }
-      const saved = await insertRows('production_entries', [row]);
-      setEntries((current) => [...saved, ...current]);
-      setStatus({ key: 'Ligne validee et sauvegardee: {department} / {machine}', department: row.department, machine: row.machine_code });
+      const completion = completionStatus(row);
+      const payload = {
+        ...row,
+        article_reference: undefined,
+        note: buildQualityNote(row.article_reference, row.note),
+        entry_status: completion.status,
+        missing_fields: completion.missingFields,
+      };
+      delete payload.article_reference;
+      const saved = await saveRows('production_entries', [payload]);
+      setEntries((current) => [...saved, ...current.filter((item) => item.id !== saved[0]?.id)]);
+      setForm(emptyForm({ department: row.department, defect_type: defaultDefect(row.department) }));
+      setStatus({ key: 'Controle qualite sauvegarde: {department} / {machine}', department: row.department, machine: row.machine_code });
     } catch (error) {
       setStatus({ key: 'Erreur sauvegarde: {error}', values: { error: error.message }, error: true });
     }
   }
 
-  async function deleteProduction(row) {
-    const ok = window.confirm(`${t('Supprimer cette saisie ?')}\n${formatDate(row.production_date)} - ${t(row.department)} - ${row.machine_code}`);
-    if (!ok) return;
+  async function addProduction(event, forceComplete = false) {
+    event.preventDefault();
+    try {
+      const row = {
+        ...form,
+        id: form.id || undefined,
+        good_qty: toNumber(form.good_qty),
+        scrap_qty: toNumber(form.scrap_qty),
+        justified_scrap_qty: toNumber(form.justified_scrap_qty),
+        purge_kg: toNumber(form.purge_kg),
+        machine_hours: toNumber(form.work_hours),
+        work_hours: toNumber(form.work_hours),
+        mod_count: toNumber(form.mod_count),
+        mod_hours: toNumber(form.mod_hours),
+        operator_names: form.operator_names.trim()
+      };
+      const completion = completionStatus(row);
+      if (forceComplete && completion.missingFields.length) {
+        setStatus({ key: 'A corriger avant sauvegarde: {fields}', fields: completion.missingFields, error: true });
+        return;
+      }
+      const payload = {
+        ...row,
+        article_reference: undefined,
+        note: buildQualityNote(row.article_reference, row.note),
+        entry_status: completion.status,
+        missing_fields: completion.missingFields,
+      };
+      delete payload.article_reference;
+      const saved = await saveRows('production_entries', [payload]);
+      setEntries((current) => [...saved, ...current.filter((item) => item.id !== saved[0]?.id)]);
+      setForm(emptyForm({ department: row.department, defect_type: defaultDefect(row.department) }));
+      setStatus(completion.status === 'Complete'
+        ? { key: 'Ligne complete sauvegardee: {department} / {machine}', department: row.department, machine: row.machine_code }
+        : { key: 'Ligne a completer sauvegardee: {fields}', fields: completion.missingFields });
+    } catch (error) {
+      setStatus({ key: 'Erreur sauvegarde: {error}', values: { error: error.message }, error: true });
+    }
+  }
+
+  async function confirmDeleteProduction(row) {
     try {
       await deleteRow('production_entries', row);
       setEntries((current) => current.filter((item) => item !== row && item.id !== row.id));
+      setDeleteCandidate(null);
       setStatus({ key: 'Saisie supprimee: {department} / {machine}', department: row.department, machine: row.machine_code });
     } catch (error) {
       setStatus({ key: 'Erreur suppression: {error}', values: { error: error.message }, error: true });
     }
+  }
+
+  function exportExcel() {
+    if (!entries.length) {
+      setStatus({ key: 'Aucune donnee a exporter', error: true });
+      return;
+    }
+    const rows = entries.map((row) => {
+      const missing = Array.isArray(row.missing_fields) ? row.missing_fields : completionStatus(row).missingFields;
+      return {
+        [t("Etat")]: t(row.entry_status || 'Complete'),
+        [t("Date")]: formatDate(row.production_date),
+        [t("Departement")]: t(row.department),
+        [t("Machine / Poste")]: row.machine_code || '',
+        [t("Reference machine")]: row.product_reference || '',
+        [t("Reference article")]: extractArticleReference(row.note),
+        [t("OF / Bon")]: row.work_order || '',
+        [t("Qte bonne")]: toNumber(row.good_qty),
+        [t("Qte rebut")]: toNumber(row.scrap_qty),
+        [t("Rebut justifie")]: toNumber(row.justified_scrap_qty),
+        [t("Purge kg")]: toNumber(row.purge_kg),
+        [t("Pareto defaut")]: row.defect_type ? t(row.defect_type) : '',
+        [t("Heure travail")]: toNumber(row.work_hours ?? row.machine_hours),
+        [t("MOD")]: toNumber(row.mod_count),
+        [t("Nom MOD")]: row.operator_names || '',
+        [t("Total H MOD")]: toNumber(row.mod_hours),
+        [t("Champs manquants")]: missing.map((field) => t(field)).join(', '),
+      };
+    });
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = Object.keys(rows[0]).map((header) => ({ wch: Math.max(14, Math.min(28, header.length + 4)) }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, t("Production").slice(0, 31));
+    const today = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `production_tous_departements_${today}.xlsx`);
+    setStatus({ key: '{count} ligne(s) exportee(s) vers Excel', count: rows.length });
   }
 
   async function importExcel(event, kind) {
@@ -400,9 +782,10 @@ function App() {
         <label>{t("Date debut")}<input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></label>
         <label>{t("Date fin")}<input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></label>
         <label>{t("Machine / Poste")}<select value={filters.machine} onChange={(e) => setFilters({ ...filters, machine: e.target.value })}><option value="Tous">{t("Tous")}</option>{machines.map((machine) => <option key={machine.id || machine.code} value={machine.code}>{machine.code}</option>)}</select></label>
-        <label>{t("Reference produit")}<select value={filters.reference} onChange={(e) => setFilters({ ...filters, reference: e.target.value })}><option value="Tous">{t("Tous")}</option>{references.map((ref) => <option key={ref.id || ref.reference} value={ref.reference}>{t(ref.reference)}</option>)}</select></label>
+        <label>{t("Reference machine")}<select value={filters.reference} onChange={(e) => setFilters({ ...filters, reference: e.target.value })}><option value="Tous">{t("Tous")}</option>{articleReferences.map((ref) => <option key={ref} value={ref}>{ref}</option>)}</select></label>
         <label>{t("OF / Bon")}<select value={filters.workOrder} onChange={(e) => setFilters({ ...filters, workOrder: e.target.value })}><option value="Tous">{t("Tous")}</option>{[...new Set(entries.map((row) => row.work_order).filter(Boolean))].map((of) => <option key={of} value={of}>{of}</option>)}</select></label>
         <button className="primary" type="button"><Search size={18} />{t("Appliquer")}</button>
+        <button className="export-button" type="button" onClick={exportExcel}><FileDown size={18} />{t("Exporter Excel")}</button>
         <button type="button" onClick={resetDemo}><RefreshCcw size={18} />{t("Reinitialiser")}</button>
       </section>
 
@@ -415,24 +798,48 @@ function App() {
         ))}
       </section>
 
-      <Panel title={t("Feuille de saisie production")} className="sheet-panel">
-        <form className="sheet-form" onSubmit={addProduction}>
-          <label>{t("Date")}<input type="date" value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
-          <label>{t("Departement")}<select value={form.department} onChange={(e) => selectDepartment(e.target.value)}>{departments.map((dept) => <option key={dept.key} value={dept.key}>{t(dept.key)}</option>)}</select></label>
-          <label>{t("Machine / Poste")}<select value={form.machine_code} onChange={(e) => handleMachineChange(e.target.value)}><option value="">{t("Choisir machine")}</option>{machinesForDept.map((machine) => <option key={machine.id || machine.code} value={machine.code}>{machine.code} - {t(machine.label)}</option>)}</select></label>
-          <label>{t("Reference machine")}<select value={form.product_reference} onChange={(e) => setForm({ ...form, product_reference: e.target.value })}><option value="">{t("Choisir reference")}</option>{referencesForDept.map((ref) => <option key={ref.id || ref.reference} value={ref.reference}>{t(ref.reference)}</option>)}</select></label>
-          <label>{t("OF / Bon")}<input placeholder={t("OF / Bon")} value={form.work_order} onChange={(e) => setForm({ ...form, work_order: e.target.value })} /></label>
-          <label>{t("Qte bonne")}<input type="number" min="0" value={form.good_qty} onChange={(e) => setForm({ ...form, good_qty: e.target.value })} /></label>
-          <label>{t("Qte rebut")}<input type="number" min="0" value={form.scrap_qty} onChange={(e) => setForm({ ...form, scrap_qty: e.target.value })} /></label>
-          <label>{t("Rebut justifie")}<input type="number" min="0" value={form.justified_scrap_qty} onChange={(e) => setForm({ ...form, justified_scrap_qty: e.target.value })} /></label>
-          <label>{t("Purge kg")}<input type="number" min="0" step="0.1" value={form.purge_kg} onChange={(e) => setForm({ ...form, purge_kg: e.target.value })} /></label>
-          <label>{t("Pareto defaut")}<select value={form.defect_type} onChange={(e) => setForm({ ...form, defect_type: e.target.value })}>{defectTypes.map((type) => <option key={type} value={type}>{t(type)}</option>)}</select></label>
-          <label>{t("Heure travail")}<input type="number" min="0" step="0.1" value={form.work_hours} onChange={(e) => setForm({ ...form, work_hours: e.target.value })} /></label>
-          <label>{t("MOD")}<input type="number" min="0" value={form.mod_count} onChange={(e) => setForm({ ...form, mod_count: e.target.value })} /></label>
-          <label>{t("Nom MOD")}<input placeholder={t("Noms operateurs")} value={form.operator_names} onChange={(e) => setForm({ ...form, operator_names: e.target.value })} /></label>
-          <label>{t("Total heure MOD")}<input type="number" min="0" step="0.1" value={form.mod_hours} onChange={(e) => setForm({ ...form, mod_hours: e.target.value })} /></label>
-          <button className="primary sheet-save" type="submit"><Save size={18} />{t("Sauvegarder la ligne")}</button>
-        </form>
+      <section className="service-switch" aria-label={t("Service de saisie")}>
+        <button className={serviceMode === 'production' ? 'active' : ''} type="button" onClick={() => setServiceMode('production')}><Factory size={18} />{t("Service production")}</button>
+        <button className={serviceMode === 'quality' ? 'active' : ''} type="button" onClick={() => setServiceMode('quality')}><CheckCircle2 size={18} />{t("Service qualite")}</button>
+      </section>
+
+      <Panel title={serviceMode === 'production' ? t("Saisie service production") : t("Saisie service qualite")} className="sheet-panel">
+        {serviceMode === 'production' ? (
+          <form className="sheet-form production-sheet" onSubmit={saveProductionService}>
+            <label>{t("Date")}<input type="date" value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
+            <label>{t("Departement")}<select value={form.department} onChange={(e) => selectDepartment(e.target.value)}>{departments.map((dept) => <option key={dept.key} value={dept.key}>{t(dept.key)}</option>)}</select></label>
+            <label>{t("Machine / Poste")}<select value={form.machine_code} onChange={(e) => handleMachineChange(e.target.value)}><option value="">{t("Choisir machine")}</option>{machinesForDept.map((machine) => <option key={machine.id || machine.code} value={machine.code}>{machine.code} - {t(machine.label)}</option>)}</select></label>
+            <label>{t("Reference machine")}<select value={form.product_reference} onChange={(e) => setForm({ ...form, product_reference: e.target.value })}><option value="">{t("Choisir reference")}</option>{referencesForDept.map((ref) => <option key={ref.id || ref.reference} value={ref.reference}>{t(ref.reference)}</option>)}</select></label>
+            <label>{t("OF / Bon")}<input placeholder={t("OF / Bon")} value={form.work_order} onChange={(e) => setForm({ ...form, work_order: e.target.value })} /></label>
+            <label>{t("Qte bonne")}<input type="number" min="0" value={form.good_qty} onChange={(e) => setForm({ ...form, good_qty: e.target.value })} /></label>
+            <label>{t("Heure travail")}<input type="number" min="0" step="0.1" value={form.work_hours} onChange={(e) => setForm({ ...form, work_hours: e.target.value })} /></label>
+            <label>{t("MOD")}<input type="number" min="0" value={form.mod_count} onChange={(e) => setForm({ ...form, mod_count: e.target.value })} /></label>
+            <label>{t("Nom MOD")}<input placeholder={t("Noms operateurs")} value={form.operator_names} onChange={(e) => setForm({ ...form, operator_names: e.target.value })} /></label>
+            <label>{t("Total heure MOD")}<input type="number" min="0" step="0.1" value={form.mod_hours} onChange={(e) => setForm({ ...form, mod_hours: e.target.value })} /></label>
+            <div className="sheet-actions">
+              <button className="primary" type="submit"><Factory size={18} />{t("Envoyer au service qualite")}</button>
+            </div>
+          </form>
+        ) : (
+          <form className="sheet-form quality-sheet" onSubmit={saveQualityService}>
+            <label>{t("Ligne production")}<select value={form.id} onChange={(e) => {
+              const row = qualityQueue.find((item) => item.id === e.target.value);
+              if (row) editProduction(row);
+            }}><option value="">{t("Choisir ligne production")}</option>{qualityQueue.map((row) => <option key={row.id} value={row.id}>{formatDate(row.production_date)} - {t(row.department)} - {row.machine_code} - {row.work_order}</option>)}</select></label>
+            <label>{t("Machine / Poste")}<input value={form.machine_code || ''} readOnly /></label>
+            <label>{t("Reference machine")}<input value={form.product_reference || ''} readOnly /></label>
+            <label>{t("Reference article")}<input placeholder={t("Reference article")} value={form.article_reference} onChange={(e) => setForm({ ...form, article_reference: e.target.value })} /></label>
+            <label>{t("Qte bonne")}<input value={toNumber(form.good_qty).toLocaleString(locale)} readOnly /></label>
+            <label>{t("Qte rebut")}<input type="number" min="0" value={form.scrap_qty} onChange={(e) => setForm({ ...form, scrap_qty: e.target.value })} /></label>
+            <label>{t("Rebut justifie")}<input type="number" min="0" value={form.justified_scrap_qty} onChange={(e) => setForm({ ...form, justified_scrap_qty: e.target.value })} /></label>
+            <label>{t("Purge kg")}<input type="number" min="0" step="0.1" value={form.purge_kg} onChange={(e) => setForm({ ...form, purge_kg: e.target.value })} /></label>
+            <label>{t("Pareto defaut")}<select value={form.defect_type} onChange={(e) => setForm({ ...form, defect_type: e.target.value })}>{defectTypes.map((type) => <option key={type} value={type}>{t(type)}</option>)}</select></label>
+            <label>{t("Note qualite")}<input placeholder={t("Observation controle")} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
+            <div className="sheet-actions">
+              <button className="primary" type="submit"><CheckCircle2 size={18} />{t("Valider controle qualite")}</button>
+            </div>
+          </form>
+        )}
         <div className="import-row">
           <span role="status" aria-live="polite" className={status.error ? 'save-status bad-status' : 'save-status'}>{t(status.key, {
             ...status.values,
@@ -444,50 +851,101 @@ function App() {
         </div>
       </Panel>
 
+      <Panel title={t("Saisies a completer")} className="incomplete-panel">
+        <table>
+          <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Champs manquants")}</th><th>{t("Action")}</th></tr></thead>
+          <tbody>
+            {incompleteEntries.map((row, index) => {
+              const missing = Array.isArray(row.missing_fields) ? row.missing_fields : completionStatus(row).missingFields;
+              return (
+                <tr key={row.id || index}>
+                  <td><span className="state-pill">{t(row.entry_status || 'A completer')}</span></td>
+                  <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code || '-'}</td><td>{row.product_reference || '-'}</td><td>{row.work_order || '-'}</td><td>{missing.map((field) => t(field)).join(locale === 'ar' ? '، ' : ', ')}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="compact-action" type="button" onClick={() => editProduction(row, 'production')}><Edit3 size={16} />{t("Prod")}</button>
+                      <button className="compact-action" type="button" onClick={() => editProduction(row, 'quality')}><CheckCircle2 size={16} />{t("Qualite")}</button>
+                      <button className="compact-action danger-button" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} />{t("Supprimer")}</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {!incompleteEntries.length && <tr><td colSpan="8" className="empty-row">{t("Aucune saisie incomplete.")}</td></tr>}
+          </tbody>
+        </table>
+      </Panel>
+
       <section className="grid charts">
+        <Panel title={t("Evaluation usine")} className="span12 factory-eval-panel">
+          <ResponsiveContainer height={280}>
+            <ComposedChart data={factoryEvaluationData} margin={{ top: 24, right: 24, bottom: 8, left: 0 }}>
+              <CartesianGrid stroke="#dbe5f2" vertical={false} />
+              <XAxis dataKey="axisKey" tickFormatter={(_, index) => factoryEvaluationData[index]?.label || ''} interval={0} />
+              <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+              <Tooltip formatter={(value, name) => [`${value}%`, t(name)]} />
+              <ReferenceLine x="sep-month" stroke="#7fb0ff" strokeDasharray="5 5" />
+              <ReferenceLine x="sep-week" stroke="#7fb0ff" strokeDasharray="5 5" />
+              <Area type="monotone" dataKey="value" stroke="none" fill="#8cbcff" fillOpacity={0.28} connectNulls name={t("Evaluation usine")} />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="#287fff"
+                strokeWidth={4}
+                dot={{ r: 5, strokeWidth: 3, fill: '#fff', stroke: '#287fff' }}
+                activeDot={{ r: 7 }}
+                connectNulls
+                name={t("Evaluation usine")}
+                label={({ x, y, value }) => value == null ? null : (
+                  <text x={x} y={y - 12} textAnchor="middle" className="chart-value-label">{Math.round(value)}%</text>
+                )}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+          <div className="factory-period-labels">
+            <strong>{t("3 derniers mois")}</strong>
+            <strong>{t("Mois actuel")}</strong>
+            <strong>{t("Semaine actuelle")}</strong>
+          </div>
+        </Panel>
         <Panel title={t("Pareto des defauts")} className="span4">
           <ResponsiveContainer height={250}>
             <ComposedChart data={defectData}>
               <CartesianGrid stroke="#dbe5f2" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis yAxisId="left" />
-              <YAxis yAxisId="right" orientation="right" domain={[0, 100]} />
-              <Tooltip />
-              <Bar yAxisId="left" dataKey="defects" fill="#1d7fe2" radius={[4, 4, 0, 0]} name={t("Nombre de defauts")} />
-              <Line yAxisId="right" dataKey="cumulative" stroke="#ff8124" strokeWidth={3} name={t("% cumule")} />
+              <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+              <Tooltip formatter={(value, name) => [`${value}%`, t(name)]} />
+              <Line
+                yAxisId="right"
+                dataKey="cumulative"
+                stroke="#ff8124"
+                strokeWidth={4}
+                dot={{ r: 5, strokeWidth: 3, fill: '#fff', stroke: '#ff8124' }}
+                activeDot={{ r: 7 }}
+                name={t("% cumule")}
+                label={({ x, y, value }) => value == null ? null : (
+                  <text x={x} y={y - 12} textAnchor="middle" className="chart-value-label">{Math.round(value)}%</text>
+                )}
+              />
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
-        <Panel title={t("Comparatif par departement")} className="span4">
-          <ResponsiveContainer height={250}>
+        <Panel title={t("Comparatif par departement")} className="span8">
+          <ResponsiveContainer height={320}>
             <ComposedChart data={departmentData}>
               <CartesianGrid stroke="#dbe5f2" />
               <XAxis dataKey="name" />
-              <YAxis yAxisId="left" />
               <YAxis yAxisId="right" orientation="right" domain={[0, 12]} />
               <Tooltip />
               <Legend />
-              <Bar yAxisId="left" dataKey="production" fill="#1d7fe2" name={t("Production")} radius={[4, 4, 0, 0]} />
-              <Bar yAxisId="left" dataKey="scrap" fill="#e23d3d" name={t("Rebut")} radius={[4, 4, 0, 0]} />
-              <Line yAxisId="right" dataKey="rate" stroke="#ff8124" strokeWidth={0} dot={{ r: 5 }} name={t("Taux de rebut (%)")} />
+              <Line yAxisId="right" type="monotone" dataKey="targetRate" stroke="#f59e0b" strokeWidth={3} strokeDasharray="7 6" dot={false} activeDot={false} name={t("Target rebut (%)")} />
+              <Line yAxisId="right" dataKey="rate" stroke="#667a94" strokeWidth={3} dot={<RateDot />} activeDot={<RateDot r={8} />} label={<RateTargetLabel />} name={t("Q/R (%)")} />
             </ComposedChart>
           </ResponsiveContainer>
-        </Panel>
-        <Panel title={t("Repartition du rebut par departement")} className="span4">
-          <div className="donut-row">
-            <ResponsiveContainer width="55%" height={250}>
-              <PieChart>
-                <Pie data={pieData} innerRadius={62} outerRadius={96} dataKey="value" paddingAngle={1}>
-                  {pieData.map((_, index) => <Cell key={colors[index]} fill={colors[index]} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="legend-list">
-              {pieData.map((row, index) => (
-                <div key={row.name}><i style={{ background: colors[index] }} />{row.name}<strong>{row.value.toLocaleString(locale)}</strong></div>
-              ))}
-            </div>
+          <div className="rate-status-legend">
+            <span><i className="rate-under" />{t("Sous target")}</span>
+            <span><i className="rate-equal" />{t("Au target")}</span>
+            <span><i className="rate-over" />{t("Depasse target")}</span>
           </div>
         </Panel>
       </section>
@@ -506,15 +964,15 @@ function App() {
 
       <Panel title={t("Detail de la production")}>
         <table>
-          <thead><tr><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Qte bonne")}</th><th>{t("Qte rebut")}</th><th>{t("Rebut justifie")}</th><th>{t("Purge kg")}</th><th>{t("Pareto defaut")}</th><th>{t("Heure travail")}</th><th>{t("MOD")}</th><th>{t("Nom MOD")}</th><th>{t("Total H MOD")}</th><th></th></tr></thead>
+          <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Qte bonne")}</th><th>{t("Qte rebut")}</th><th>{t("Rebut justifie")}</th><th>{t("Purge kg")}</th><th>{t("Pareto defaut")}</th><th>{t("Heure travail")}</th><th>{t("MOD")}</th><th>{t("Nom MOD")}</th><th>{t("Total H MOD")}</th><th></th></tr></thead>
           <tbody>
             {filtered.map((row, index) => (
               <tr key={row.id || index}>
-                <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{t(row.product_reference)}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td>{t(row.defect_type)}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
-                <td><button aria-label={t("Supprimer")} className="icon-only danger-icon" type="button" onClick={() => deleteProduction(row)}><Trash2 size={16} /></button></td>
+                <td><span className={row.entry_status === 'Complete' ? 'state-pill complete' : 'state-pill'}>{t(row.entry_status || 'Complete')}</span></td><td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td>{t(row.defect_type)}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
+                <td><button aria-label={t("Completer")} className="icon-only" type="button" onClick={() => editProduction(row)}><Edit3 size={16} /></button><button aria-label={t("Supprimer")} className="icon-only danger-icon" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} /></button></td>
               </tr>
             ))}
-            {!filtered.length && <tr><td colSpan="15" className="empty-row">{t("Aucune donnee. Choisissez un departement puis ajoutez une ligne de production.")}</td></tr>}
+            {!filtered.length && <tr><td colSpan="16" className="empty-row">{t("Aucune donnee. Choisissez un departement puis ajoutez une ligne de production.")}</td></tr>}
           </tbody>
         </table>
       </Panel>
@@ -535,13 +993,29 @@ function App() {
                 <tbody>
                   {entries.map((row, index) => (
                     <tr key={row.id || index}>
-                      <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{t(row.product_reference)}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td>{t(row.defect_type)}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
-                      <td><button className="danger-button compact-danger" type="button" onClick={() => deleteProduction(row)}><Trash2 size={16} />{t("Supprimer")}</button></td>
+                      <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td>{t(row.defect_type)}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
+                      <td><button className="danger-button compact-danger" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} />{t("Supprimer")}</button></td>
                     </tr>
                   ))}
                   {!entries.length && <tr><td colSpan="15" className="empty-row">{t("Aucun historique pour le moment.")}</td></tr>}
                 </tbody>
               </table>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {deleteCandidate && (
+        <div className="confirm-modal" role="dialog" aria-modal="true" aria-label={t("Supprimer cette saisie ?")}>
+          <section className="confirm-window">
+            <header>
+              <Trash2 size={22} />
+              <h2>{t("Supprimer cette saisie ?")}</h2>
+            </header>
+            <p>{formatDate(deleteCandidate.production_date)} - {t(deleteCandidate.department)} - {deleteCandidate.machine_code}</p>
+            <div className="confirm-actions">
+              <button type="button" onClick={() => setDeleteCandidate(null)}>{t("Annuler")}</button>
+              <button className="danger-button" type="button" onClick={() => confirmDeleteProduction(deleteCandidate)}>{t("OK supprimer")}</button>
             </div>
           </section>
         </div>

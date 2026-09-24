@@ -20,6 +20,23 @@ export function readLanguage(storage) {
 // French source keys keep stored department/defect identifiers independent of display language.
 // Columns: French | English | Arabic | Simplified Chinese | Italian.
 const rows = `
+Annuler|Cancel|Cancel|Cancel|Annulla
+OK supprimer|OK, delete|OK, delete|OK, delete|OK, elimina
+Reference article|Article reference|Article reference|Article reference|Riferimento articolo
+Target rebut|Scrap target|Scrap target|Scrap target|Target scarti
+Target rebut (%)|Scrap target (%)|Scrap target (%)|Scrap target (%)|Target scarti (%)
+Q/R (%)|Q/R (%)|Q/R (%)|Q/R (%)|Q/R (%)
+Evaluation usine|Factory evaluation|Factory evaluation|Factory evaluation|Valutazione stabilimento
+3 derniers mois|Last 3 months|Last 3 months|Last 3 months|Ultimi 3 mesi
+Mois actuel|Current month|Current month|Current month|Mese attuale
+Semaine actuelle|Current week|Current week|Current week|Settimana attuale
+Semaine|Week|Week|Week|Settimana
+Sous target|Under target|Under target|Under target|Sotto target
+Au target|At target|At target|At target|Al target
+Depasse target|Above target|Above target|Above target|Sopra target
+Ligne envoyee au service qualite: {department} / {machine}|Entry sent to quality service: {department} / {machine}|Entry sent to quality service: {department} / {machine}|Entry sent to quality service: {department} / {machine}|Riga inviata al servizio qualita: {department} / {machine}
+Selectionnez une ligne production a controler|Select a production entry to inspect|Select a production entry to inspect|Select a production entry to inspect|Seleziona una riga produzione da controllare
+Controle qualite sauvegarde: {department} / {machine}|Quality inspection saved: {department} / {machine}|Quality inspection saved: {department} / {machine}|Quality inspection saved: {department} / {machine}|Controllo qualita salvato: {department} / {machine}
 Traduction|Translation|الترجمة|翻译|Traduzione
 Langue|Language|اللغة|语言|Lingua
 Dashboard Qualite & Production|Quality & Production Dashboard|لوحة متابعة الجودة والإنتاج|质量与生产看板|Dashboard qualità e produzione
@@ -34,6 +51,7 @@ Reference produit|Product reference|مرجع المنتج|产品编号|Riferimen
 OF / Bon|Work order|أمر العمل|工单|Ordine di lavoro
 Tous|All|الكل|全部|Tutti
 Appliquer|Apply|تطبيق|应用|Applica
+Exporter Excel|Export Excel|Export Excel|Export Excel|Esporta Excel
 Reinitialiser|Reset|إعادة تعيين|重置|Reimposta
 Injection|Injection molding|الحقن|注塑|Iniezione
 Metallisation|Metallization|الطلاء المعدني|金属化|Metallizzazione
@@ -63,6 +81,36 @@ Noms operateurs|Operator names|أسماء العمال|操作员姓名|Nomi oper
 Total heure MOD|Total labor hours|إجمالي ساعات العمالة|总人工工时|Ore totali manodopera
 Total H MOD|Total labor hours|إجمالي ساعات العمالة|总人工工时|Ore totali manodopera
 Sauvegarder la ligne|Save entry|حفظ السطر|保存记录|Salva riga
+Etat saisie|Entry state|Entry state|Entry state|Stato inserimento
+Nouvelle ligne|New entry|New entry|New entry|Nuova riga
+Modification|Editing|Editing|Editing|Modifica
+Modifier|Edit|Edit|Edit|Modifica
+Prod|Prod|Prod|Prod|Prod
+Qualite|Quality|Quality|Quality|Qualita
+Service de saisie|Entry service|Entry service|Entry service|Servizio di inserimento
+Service production|Production service|Production service|Production service|Servizio produzione
+Service qualite|Quality service|Quality service|Quality service|Servizio qualita
+Saisie service production|Production service entry|Production service entry|Production service entry|Inserimento servizio produzione
+Saisie service qualite|Quality service entry|Quality service entry|Quality service entry|Inserimento servizio qualita
+Envoyer au service qualite|Send to quality service|Send to quality service|Send to quality service|Invia al servizio qualita
+Ligne production|Production entry|Production entry|Production entry|Riga produzione
+Choisir ligne production|Choose production entry|Choose production entry|Choose production entry|Scegli riga produzione
+Note qualite|Quality note|Quality note|Quality note|Nota qualita
+Observation controle|Inspection note|Inspection note|Inspection note|Osservazione controllo
+Valider controle qualite|Validate quality inspection|Validate quality inspection|Validate quality inspection|Valida controllo qualita
+Controle qualite|Quality inspection|Quality inspection|Quality inspection|Controllo qualita
+Qualite a completer|Quality to complete|Quality to complete|Quality to complete|Qualita da completare
+Sauvegarder incomplet|Save incomplete|Save incomplete|Save incomplete|Salva incompleto
+Valider complet|Validate complete|Validate complete|Validate complete|Valida completo
+Saisies a completer|Entries to complete|Entries to complete|Entries to complete|Inserimenti da completare
+Etat|State|State|State|Stato
+Champs manquants|Missing fields|Missing fields|Missing fields|Campi mancanti
+Completer|Complete|Complete|Complete|Completa
+Aucune saisie incomplete.|No incomplete entries.|No incomplete entries.|No incomplete entries.|Nessun inserimento incompleto.
+A completer|To complete|To complete|To complete|Da completare
+Complete|Complete|Complete|Complete|Completo
+Brouillon|Draft|Draft|Draft|Bozza
+Non renseigne|Not filled|Not filled|Not filled|Non compilato
 Pareto des defauts|Defect Pareto chart|مخطط باريتو للعيوب|缺陷帕累托图|Pareto dei difetti
 Nombre de defauts|Number of defects|عدد العيوب|缺陷数量|Numero di difetti
 % cumule|Cumulative %|النسبة التراكمية ٪|累计百分比|% cumulata
@@ -88,6 +136,9 @@ Mode local: ajoutez .env pour Supabase|Local mode: add .env to connect Supabase|
 Donnees videes: pret pour import Excel et saisie|Data cleared: ready for Excel import and entry|تم إفراغ البيانات: جاهز للاستيراد من Excel والإدخال|数据已清空：可导入 Excel 或录入|Dati svuotati: pronto per importazione Excel e inserimento
 A corriger avant sauvegarde: {fields}|Fix before saving: {fields}|يرجى التصحيح قبل الحفظ: {fields}|保存前请修正：{fields}|Correggi prima di salvare: {fields}
 Ligne validee et sauvegardee: {department} / {machine}|Entry validated and saved: {department} / {machine}|تم التحقق والحفظ: {department} / {machine}|记录已验证并保存：{department} / {machine}|Riga validata e salvata: {department} / {machine}
+Ligne complete sauvegardee: {department} / {machine}|Complete entry saved: {department} / {machine}|Complete entry saved: {department} / {machine}|Complete entry saved: {department} / {machine}|Riga completa salvata: {department} / {machine}
+Ligne a completer sauvegardee: {fields}|Incomplete entry saved: {fields}|Incomplete entry saved: {fields}|Incomplete entry saved: {fields}|Riga da completare salvata: {fields}
+Ligne chargee pour completion: {department} / {machine}|Entry loaded for completion: {department} / {machine}|Entry loaded for completion: {department} / {machine}|Entry loaded for completion: {department} / {machine}|Riga caricata per completamento: {department} / {machine}
 Erreur sauvegarde: {error}|Save error: {error}|خطأ في الحفظ: {error}|保存错误：{error}|Errore di salvataggio: {error}
 Supprimer cette saisie ?|Delete this entry?|هل تريد حذف هذا السجل؟|删除此记录？|Eliminare questa riga?
 Saisie supprimee: {department} / {machine}|Entry deleted: {department} / {machine}|تم حذف السجل: {department} / {machine}|记录已删除：{department} / {machine}|Riga eliminata: {department} / {machine}
@@ -95,6 +146,8 @@ Erreur suppression: {error}|Delete error: {error}|خطأ في الحذف: {error
 {count} machines importees depuis Excel|{count} machines imported from Excel|تم استيراد {count} آلة من Excel|已从 Excel 导入 {count} 台机器|{count} macchine importate da Excel
 {count} references produit importees depuis Excel|{count} product references imported from Excel|تم استيراد {count} مرجع منتج من Excel|已从 Excel 导入 {count} 个产品编号|{count} riferimenti prodotto importati da Excel
 {count} ligne(s) enregistree(s)|Saved entries: {count}|السجلات المحفوظة: {count}|已保存记录：{count}|Righe salvate: {count}
+{count} ligne(s) exportee(s) vers Excel|{count} row(s) exported to Excel|{count} row(s) exported to Excel|{count} row(s) exported to Excel|{count} righe esportate in Excel
+Aucune donnee a exporter|No data to export|No data to export|No data to export|Nessun dato da esportare
 qte bonne ou qte rebut|good quantity or scrap quantity|الكمية السليمة أو كمية المرفوضات|合格数量或废品数量|quantità conforme o scarti
 rebut justifie <= qte rebut|justified scrap ≤ scrap quantity|المرفوضات المبررة ≤ كمية المرفوضات|已说明原因的废品 ≤ 废品数量|scarti giustificati ≤ quantità scarti
 Ecart|Gap|فجوة|间隙|Scostamento

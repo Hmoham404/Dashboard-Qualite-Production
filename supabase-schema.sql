@@ -36,12 +36,18 @@ create table if not exists production_entries (
   operator_names text,
   defect_type text,
   note text,
+  entry_status text not null default 'Complete',
+  missing_fields text[] not null default '{}',
+  completed_at timestamptz,
   created_at timestamptz not null default now()
 );
 
 alter table production_entries add column if not exists justified_scrap_qty integer not null default 0;
 alter table production_entries add column if not exists work_hours numeric(12,2) not null default 0;
 alter table production_entries add column if not exists operator_names text;
+alter table production_entries add column if not exists entry_status text not null default 'Complete';
+alter table production_entries add column if not exists missing_fields text[] not null default '{}';
+alter table production_entries add column if not exists completed_at timestamptz;
 
 create table if not exists mod_assignments (
   id uuid primary key default gen_random_uuid(),
