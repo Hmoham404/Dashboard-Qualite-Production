@@ -33,6 +33,7 @@ import {
   AlertCircle,
   CheckCircle2,
   FileDown,
+  PlusCircle,
 } from 'lucide-react';
 import { initialMachines, initialReferences } from './initialCatalog';
 import './styles.css';
@@ -72,9 +73,52 @@ const scrapRateColors = {
   equal: '#d8a80e',
   under: '#1e9d5b',
 };
-const seedEntries = [];
-const seedMachines = initialMachines;
-const seedReferences = initialReferences;
+const qualityOnlyMarker = 'SAISIE_QUALITE_SEULE: oui';
+const paperInjectionRows = [
+  ['2026-09-09', '202608.085', 6160, 16],
+  ['2026-09-10', '202608.085', 6150, 78],
+  ['2026-09-11', '202608.085', 7044, 71],
+  ['2026-09-14', '202608.085', 8090, 17],
+  ['2026-09-15', '202608.085', 9046, 39],
+  ['2026-09-16', '202609.099', 8453, 62],
+  ['2026-09-17', '202609.099', 10181, 59],
+  ['2026-09-18', '202609.099', 4028, 134],
+  ['2026-09-19', '202609.099', 3875, 75],
+  ['2026-09-21', '202609.099', 8397, 35],
+  ['2026-09-22', '202609.099', 10083, 45],
+  ['2026-09-23', '202609.099', 10106, 106],
+  ['2026-09-24', '202609.099', 10133, 115],
+];
+
+const seedEntries = paperInjectionRows.map(([production_date, work_order, good_qty, scrap_qty], index) => ({
+  id: `paper-injection-d2301-${index + 1}`,
+  production_date,
+  department: 'Injection',
+  machine_code: 'D230.1',
+  product_reference: 'D230.1',
+  work_order,
+  good_qty,
+  scrap_qty,
+  justified_scrap_qty: 0,
+  purge_kg: 0,
+  defect_type: 'Autres',
+  machine_hours: 0,
+  work_hours: 0,
+  mod_count: 0,
+  mod_hours: 0,
+  operator_names: '',
+  note: buildQualityNote('D230.1', 'Saisie initiale depuis photo cahier injection D230.1'),
+  entry_status: 'A completer',
+  missing_fields: ['Total heure MOD'],
+}));
+const seedMachines = [
+  { code: 'D230.1', label: 'Injection D230.1', department: 'Injection', reference: 'D230.1', source_file: 'Photo cahier qualite' },
+  ...initialMachines
+];
+const seedReferences = [
+  { reference: 'D230.1', designation: 'Injection D230.1', family: 'Injection', source_file: 'Photo cahier qualite' },
+  ...initialReferences
+];
 const seedAssignments = [];
 
 function isoDate(date) {
@@ -116,6 +160,7 @@ function extractArticleReference(note = '') {
 function extractQualityNote(note = '') {
   return String(note)
     .replace(/^REF_ARTICLE:.*$/m, '')
+    .replace(/^SAISIE_QUALITE_SEULE:.*$/m, '')
     .replace(/^NOTE_QUALITE:\s*/m, '')
     .trim();
 }
@@ -188,8 +233,13 @@ function validateQuality(row) {
   return errors;
 }
 
+function isQualityOnlyEntry(row) {
+  return String(row.note || '').includes(qualityOnlyMarker);
+}
+
 function completionStatus(row) {
-  const missingFields = [...validateProduction(row), ...validateQuality(row)];
+  const productionMissing = isQualityOnlyEntry(row) ? [] : validateProduction(row);
+  const missingFields = [...productionMissing, ...validateQuality(row)];
   return {
     status: missingFields.length ? 'A completer' : 'Complete',
     missingFields,
@@ -541,6 +591,17 @@ function App() {
     setStatus({ key: 'Ligne chargee pour completion: {department} / {machine}', department: row.department, machine: row.machine_code || t('Non renseigne') });
   }
 
+  function startQualityEntry() {
+    setServiceMode('quality');
+    setForm(emptyForm({
+      department: activeDept,
+      defect_type: defaultDefect(activeDept),
+      entry_status: 'A completer',
+      missing_fields: [],
+    }));
+    setStatus({ key: 'Nouvelle ligne qualite: saisir les donnees disponibles' });
+  }
+
   function handleMachineChange(machineCode) {
     setForm({
       ...form,
@@ -589,13 +650,10 @@ function App() {
 
   async function saveQualityService(event) {
     event.preventDefault();
-    if (!form.id) {
-      setStatus({ key: 'Selectionnez une ligne production a controler', error: true });
-      return;
-    }
     try {
       const row = {
         ...form,
+        id: form.id || undefined,
         good_qty: toNumber(form.good_qty),
         scrap_qty: toNumber(form.scrap_qty),
         justified_scrap_qty: toNumber(form.justified_scrap_qty),
@@ -611,11 +669,15 @@ function App() {
         setStatus({ key: 'A corriger avant sauvegarde: {fields}', fields: qualityMissing, error: true });
         return;
       }
-      const completion = completionStatus(row);
+      const note = [
+        buildQualityNote(row.article_reference, row.note),
+        form.id ? '' : qualityOnlyMarker,
+      ].filter(Boolean).join('\n');
+      const completion = completionStatus({ ...row, note });
       const payload = {
         ...row,
         article_reference: undefined,
-        note: buildQualityNote(row.article_reference, row.note),
+        note,
         entry_status: completion.status,
         missing_fields: completion.missingFields,
       };
@@ -822,14 +884,20 @@ function App() {
           </form>
         ) : (
           <form className="sheet-form quality-sheet" onSubmit={saveQualityService}>
-            <label>{t("Ligne production")}<select value={form.id} onChange={(e) => {
-              const row = qualityQueue.find((item) => item.id === e.target.value);
-              if (row) editProduction(row);
-            }}><option value="">{t("Choisir ligne production")}</option>{qualityQueue.map((row) => <option key={row.id} value={row.id}>{formatDate(row.production_date)} - {t(row.department)} - {row.machine_code} - {row.work_order}</option>)}</select></label>
-            <label>{t("Machine / Poste")}<input value={form.machine_code || ''} readOnly /></label>
-            <label>{t("Reference machine")}<input value={form.product_reference || ''} readOnly /></label>
+            <div className="quality-pick">
+              <label>{t("Ligne production")}<select value={form.id} onChange={(e) => {
+                const row = qualityQueue.find((item) => item.id === e.target.value);
+                if (row) editProduction(row);
+              }}><option value="">{t("Choisir ligne production")}</option>{qualityQueue.map((row) => <option key={row.id} value={row.id}>{formatDate(row.production_date)} - {t(row.department)} - {row.machine_code} - {row.work_order}</option>)}</select></label>
+              <button type="button" onClick={startQualityEntry}><PlusCircle size={18} />{t("Nouvelle ligne qualite")}</button>
+            </div>
+            <label>{t("Date")}<input type="date" value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
+            <label>{t("Departement")}<select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value, defect_type: defaultDefect(e.target.value) })}>{departments.map((dept) => <option key={dept.key} value={dept.key}>{t(dept.key)}</option>)}</select></label>
+            <label>{t("Machine / Poste")}<input placeholder={t("Machine / Poste")} value={form.machine_code || ''} onChange={(e) => setForm({ ...form, machine_code: e.target.value })} /></label>
+            <label>{t("Reference machine")}<input placeholder={t("Reference machine")} value={form.product_reference || ''} onChange={(e) => setForm({ ...form, product_reference: e.target.value })} /></label>
+            <label>{t("OF / Bon")}<input placeholder={t("OF / Bon")} value={form.work_order || ''} onChange={(e) => setForm({ ...form, work_order: e.target.value })} /></label>
             <label>{t("Reference article")}<input placeholder={t("Reference article")} value={form.article_reference} onChange={(e) => setForm({ ...form, article_reference: e.target.value })} /></label>
-            <label>{t("Qte bonne")}<input value={toNumber(form.good_qty).toLocaleString(locale)} readOnly /></label>
+            <label>{t("Qte bonne")}<input type="number" min="0" value={form.good_qty} onChange={(e) => setForm({ ...form, good_qty: e.target.value })} /></label>
             <label>{t("Qte rebut")}<input type="number" min="0" value={form.scrap_qty} onChange={(e) => setForm({ ...form, scrap_qty: e.target.value })} /></label>
             <label>{t("Rebut justifie")}<input type="number" min="0" value={form.justified_scrap_qty} onChange={(e) => setForm({ ...form, justified_scrap_qty: e.target.value })} /></label>
             <label>{t("Purge kg")}<input type="number" min="0" step="0.1" value={form.purge_kg} onChange={(e) => setForm({ ...form, purge_kg: e.target.value })} /></label>

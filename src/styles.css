@@ -650,17 +650,33 @@ h2 {
 
 .quality-sheet {
   grid-template-columns:
-    minmax(360px, 1.9fr)
-    minmax(170px, .9fr)
-    minmax(210px, 1.1fr)
-    minmax(210px, 1.1fr)
+    minmax(440px, 2.2fr)
+    minmax(120px, .7fr)
+    minmax(145px, .85fr)
+    minmax(170px, .95fr)
+    minmax(180px, 1fr)
+    minmax(120px, .7fr)
+    minmax(180px, 1fr)
     minmax(110px, .65fr)
     minmax(110px, .65fr)
     minmax(130px, .75fr)
     minmax(110px, .65fr)
     minmax(180px, 1fr)
     minmax(220px, 1.2fr);
-  min-width: 1720px;
+  min-width: 2180px;
+}
+
+.quality-pick {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.quality-pick button {
+  min-height: 38px;
+  white-space: nowrap;
 }
 
 .draft-button {

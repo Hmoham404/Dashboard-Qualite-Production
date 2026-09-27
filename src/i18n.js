@@ -83,6 +83,8 @@ Total H MOD|Total labor hours|إجمالي ساعات العمالة|总人工�
 Sauvegarder la ligne|Save entry|حفظ السطر|保存记录|Salva riga
 Etat saisie|Entry state|Entry state|Entry state|Stato inserimento
 Nouvelle ligne|New entry|New entry|New entry|Nuova riga
+Nouvelle ligne qualite|New quality entry|New quality entry|New quality entry|Nuova riga qualita
+Nouvelle ligne qualite: saisir les donnees disponibles|New quality entry: enter available data|New quality entry: enter available data|New quality entry: enter available data|Nuova riga qualita: inserisci i dati disponibili
 Modification|Editing|Editing|Editing|Modifica
 Modifier|Edit|Edit|Edit|Modifica
 Prod|Prod|Prod|Prod|Prod
