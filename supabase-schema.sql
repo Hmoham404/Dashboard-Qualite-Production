@@ -35,6 +35,7 @@ create table if not exists production_entries (
   mod_hours numeric(12,2) not null default 0,
   operator_names text,
   defect_type text,
+  defect_breakdown jsonb not null default '[]'::jsonb,
   note text,
   entry_status text not null default 'Complete',
   missing_fields text[] not null default '{}',
@@ -45,6 +46,7 @@ create table if not exists production_entries (
 alter table production_entries add column if not exists justified_scrap_qty integer not null default 0;
 alter table production_entries add column if not exists work_hours numeric(12,2) not null default 0;
 alter table production_entries add column if not exists operator_names text;
+alter table production_entries add column if not exists defect_breakdown jsonb not null default '[]'::jsonb;
 alter table production_entries add column if not exists entry_status text not null default 'Complete';
 alter table production_entries add column if not exists missing_fields text[] not null default '{}';
 alter table production_entries add column if not exists completed_at timestamptz;

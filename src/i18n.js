@@ -27,6 +27,12 @@ Target rebut|Scrap target|Scrap target|Scrap target|Target scarti
 Target rebut (%)|Scrap target (%)|Scrap target (%)|Scrap target (%)|Target scarti (%)
 Q/R (%)|Q/R (%)|Q/R (%)|Q/R (%)|Q/R (%)
 Evaluation usine|Factory evaluation|Factory evaluation|Factory evaluation|Valutazione stabilimento
+Évaluation usine|Factory evaluation|تقييم المصنع|工厂评估|Valutazione stabilimento
+Vue d ensemble|Overview|نظرة عامة|概览|Panoramica
+Production totale|Total production|إجمالي الإنتاج|总产量|Produzione totale
+Taux rebut|Scrap rate|معدل المرفوضات|废品率|Tasso di scarto
+pieces|pièces|قطعة|件|pezzi
+heures|hours|ساعات|小时|ore
 3 derniers mois|Last 3 months|Last 3 months|Last 3 months|Ultimi 3 mesi
 Mois actuel|Current month|Current month|Current month|Mese attuale
 Semaine actuelle|Current week|Current week|Current week|Settimana attuale
@@ -74,6 +80,17 @@ Qte rebut|Scrap quantity|كمية المرفوضات|废品数量|Quantità scar
 Rebut justifie|Justified scrap|المرفوضات المبررة|已说明原因的废品|Scarti giustificati
 Purge kg|Purge (kg)|التطهير (كغ)|清机料（千克）|Spurgo (kg)
 Pareto defaut|Defect category|نوع العيب|缺陷类型|Tipo di difetto
+Supabase non configure: controle qualite non sauvegarde|Supabase is not configured: quality inspection was not saved|لم يتم إعداد Supabase: لم يتم حفظ فحص الجودة|未配置 Supabase：质量检查未保存|Supabase non configurato: controllo qualità non salvato
+Repartition defauts|Defect breakdown|توزيع العيوب|缺陷分类|Ripartizione difetti
+Saisir ou choisir defaut|Type or choose a defect|اكتب العيب أو اختره|输入或选择缺陷|Digita o scegli il difetto
+Afficher tout|Show all|عرض الكل|显示全部|Mostra tutto
+Afficher les 3 dernieres|Show the 3 latest|عرض آخر 3|显示最新3条|Mostra le ultime 3
+Quantite defaut|Defect quantity|كمية العيب|缺陷数量|Quantità difetto
+Ajouter un defaut|Add a defect|إضافة عيب|添加缺陷|Aggiungi difetto
+Supprimer defaut|Remove defect|حذف العيب|删除缺陷|Rimuovi difetto
+Total defauts|Defect total|إجمالي العيوب|缺陷总数|Totale difetti
+Total defauts = qte rebut|Defect total must equal scrap quantity|يجب أن يساوي إجمالي العيوب كمية المرفوضات|缺陷总数必须等于废品数量|Il totale difetti deve corrispondere agli scarti
+Total defauts doit correspondre a qte rebut|Defect total must match scrap quantity|يجب أن يطابق إجمالي العيوب كمية المرفوضات|缺陷总数必须与废品数量一致|Il totale difetti deve corrispondere alla quantità di scarti
 Heure travail|Working hours|ساعات العمل|工时|Ore di lavoro
 MOD|Direct labor|العمالة المباشرة|直接人工|Manodopera diretta
 Nom MOD|Operator names|أسماء العمال|操作员姓名|Nomi operatori
@@ -114,6 +131,8 @@ Complete|Complete|Complete|Complete|Completo
 Brouillon|Draft|Draft|Draft|Bozza
 Non renseigne|Not filled|Not filled|Not filled|Non compilato
 Pareto des defauts|Defect Pareto chart|مخطط باريتو للعيوب|缺陷帕累托图|Pareto dei difetti
+Evaluation par defauts|Defect evaluation|تقييم العيوب|缺陷评估|Valutazione dei difetti
+Evolution des defauts|Defect trends|تطور العيوب|缺陷变化趋势|Andamento dei difetti
 Nombre de defauts|Number of defects|عدد العيوب|缺陷数量|Numero di difetti
 % cumule|Cumulative %|النسبة التراكمية ٪|累计百分比|% cumulata
 Comparatif par departement|Department comparison|مقارنة الأقسام|部门对比|Confronto reparti

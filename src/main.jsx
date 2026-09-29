@@ -10,8 +10,8 @@ import {
   ComposedChart,
   Legend,
   Line,
-  ReferenceLine,
   ResponsiveContainer,
+  ReferenceLine,
   Tooltip,
   XAxis,
   YAxis
@@ -121,6 +121,20 @@ const seedReferences = [
 ];
 const seedAssignments = [];
 
+function cleanKey(key = '') {
+  return key.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+function pick(row, names) {
+  const match = Object.keys(row).find((key) => names.includes(cleanKey(key)));
+  return match ? row[match] : '';
+}
+
+function toNumber(value) {
+  const parsed = Number(String(value ?? 0).replace(',', '.').replace(/[^\d.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function isoDate(date) {
   return date.toISOString().slice(0, 10);
 }
@@ -139,20 +153,6 @@ function addDays(date, days) {
   return next;
 }
 
-function cleanKey(key = '') {
-  return key.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
-}
-
-function pick(row, names) {
-  const match = Object.keys(row).find((key) => names.includes(cleanKey(key)));
-  return match ? row[match] : '';
-}
-
-function toNumber(value) {
-  const parsed = Number(String(value ?? 0).replace(',', '.').replace(/[^\d.-]/g, ''));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function extractArticleReference(note = '') {
   return String(note).match(/REF_ARTICLE:\s*(.*)/)?.[1]?.split('\n')[0]?.trim() || '';
 }
@@ -162,7 +162,36 @@ function extractQualityNote(note = '') {
     .replace(/^REF_ARTICLE:.*$/m, '')
     .replace(/^SAISIE_QUALITE_SEULE:.*$/m, '')
     .replace(/^NOTE_QUALITE:\s*/m, '')
+    .replace(/^REPARTITION_DEFAUTS:.*$/m, '')
     .trim();
+}
+
+function extractDefectBreakdown(note = '', defectType = '', scrapQty = '') {
+  const match = String(note).match(/^REPARTITION_DEFAUTS:\s*(.*)$/m);
+  if (match) {
+    try {
+      const breakdown = JSON.parse(match[1]);
+      if (Array.isArray(breakdown) && breakdown.length) return breakdown;
+    } catch { /* Older or malformed note: use the legacy single defect. */ }
+  }
+  return [{ type: defectType || 'Autres', qty: scrapQty }];
+}
+
+function defectBreakdownForRow(row) {
+  if (Array.isArray(row.defect_breakdown) && row.defect_breakdown.length) return row.defect_breakdown;
+  return extractDefectBreakdown(row.note, row.defect_type, row.scrap_qty);
+}
+
+function breakdownTotal(breakdown = []) {
+  return breakdown.reduce((sum, item) => sum + toNumber(item.qty), 0);
+}
+
+function scrapDefectEntries(row) {
+  const breakdown = defectBreakdownForRow(row);
+  const hasQuantities = breakdown.some((item) => toNumber(item.qty) > 0);
+  return hasQuantities
+    ? breakdown.filter((item) => toNumber(item.qty) > 0).map((item) => [item.type, toNumber(item.qty)])
+    : [[row.defect_type || 'Autres', toNumber(row.scrap_qty)]];
 }
 
 function buildQualityNote(articleReference, qualityNote) {
@@ -228,7 +257,10 @@ function validateProduction(row) {
 function validateQuality(row) {
   const errors = [];
   if (!(row.article_reference || extractArticleReference(row.note)).trim()) errors.push('Reference article');
-  if (toNumber(row.scrap_qty) > 0 && !row.defect_type) errors.push('Pareto defaut');
+  const breakdown = row.defect_breakdown || defectBreakdownForRow(row);
+  const activeBreakdown = breakdown.filter((item) => item.type && toNumber(item.qty) > 0);
+  if (toNumber(row.scrap_qty) > 0 && !activeBreakdown.length) errors.push('Pareto defaut');
+  if (activeBreakdown.length && breakdownTotal(activeBreakdown) !== toNumber(row.scrap_qty)) errors.push('Total defauts = qte rebut');
   if (toNumber(row.justified_scrap_qty) > toNumber(row.scrap_qty)) errors.push('rebut justifie <= qte rebut');
   return errors;
 }
@@ -324,15 +356,32 @@ async function saveRows(name, rows) {
     const existingRows = dbRows.filter((row) => row.id);
     const newRows = dbRows.filter((row) => !row.id);
     const saved = [];
+    const saveEntryBatch = async (batch, isUpdate) => {
+      if (!batch.length) return [];
+      const request = isUpdate
+        ? supabase.from(name).upsert(batch, { onConflict: 'id' })
+        : supabase.from(name).insert(batch);
+      const result = await request.select();
+      const missingBreakdownColumn = result.error
+        && ['42703', 'PGRST204'].includes(result.error.code)
+        && String(result.error.message).includes('defect_breakdown');
+      if (!missingBreakdownColumn) {
+        if (result.error) throw result.error;
+        return result.data || [];
+      }
+      // Older databases can still persist the same breakdown in the note field.
+      const compatibleBatch = batch.map(({ defect_breakdown, ...row }) => row);
+      const retry = isUpdate
+        ? await supabase.from(name).upsert(compatibleBatch, { onConflict: 'id' }).select()
+        : await supabase.from(name).insert(compatibleBatch).select();
+      if (retry.error) throw retry.error;
+      return retry.data || [];
+    };
     if (newRows.length) {
-      const { data, error } = await supabase.from(name).insert(newRows).select();
-      if (error) throw error;
-      saved.push(...(data || []));
+      saved.push(...await saveEntryBatch(newRows, false));
     }
     if (existingRows.length) {
-      const { data, error } = await supabase.from(name).upsert(existingRows, { onConflict: 'id' }).select();
-      if (error) throw error;
-      saved.push(...(data || []));
+      saved.push(...await saveEntryBatch(existingRows, true));
     }
     return saved;
   }
@@ -372,6 +421,8 @@ function App() {
   const [assignments, setAssignments] = useState(seedAssignments);
   const [status, setStatus] = useState({ key: supabase ? 'Connecte a Supabase' : 'Mode local: ajoutez .env pour Supabase' });
   const [showHistoryWindow, setShowHistoryWindow] = useState(false);
+  const [showAllIncomplete, setShowAllIncomplete] = useState(false);
+  const [showAllProduction, setShowAllProduction] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [serviceMode, setServiceMode] = useState('production');
   const [filters, setFilters] = useState({ ...currentDateRange(), machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
@@ -391,6 +442,7 @@ function App() {
     mod_hours: 0,
     operator_names: '',
     defect_type: 'Bavure',
+    defect_breakdown: [],
     article_reference: '',
     note: '',
     entry_status: 'Qualite a completer',
@@ -421,15 +473,11 @@ function App() {
       return inDate && inDept && inMachine && inRef && inOf;
     });
   }, [entries, filters, activeDept]);
-
-  const totals = useMemo(() => {
-    const good = filtered.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
-    const scrap = filtered.reduce((sum, row) => sum + toNumber(row.scrap_qty), 0);
-    const purge = filtered.reduce((sum, row) => sum + toNumber(row.purge_kg), 0);
-    const machineHours = filtered.reduce((sum, row) => sum + toNumber(row.work_hours ?? row.machine_hours), 0);
-    const modHours = filtered.reduce((sum, row) => sum + toNumber(row.mod_hours), 0);
-    return { good, scrap, total: good + scrap, purge, machineHours, modHours, scrapRate: good + scrap ? (scrap / (good + scrap)) * 100 : 0 };
-  }, [filtered]);
+  const visibleProductionRows = useMemo(() => {
+    const latestFirst = [...filtered].sort((a, b) => String(b.production_date || '').localeCompare(String(a.production_date || ''))
+      || String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    return showAllProduction ? latestFirst : latestFirst.slice(0, 3);
+  }, [filtered, showAllProduction]);
 
   const departmentData = useMemo(() => departments.map((dept) => {
     const rows = entries.filter((entry) => entry.department === dept.key);
@@ -446,71 +494,53 @@ function App() {
       const good = rows.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
       const scrap = rows.reduce((sum, row) => sum + toNumber(row.scrap_qty), 0);
       const total = good + scrap;
-      return {
-        ...bucket,
-        good,
-        total,
-        value: total ? Number(((good / total) * 100).toFixed(1)) : null,
-      };
+      return { ...bucket, good, total, value: total ? Number(((good / total) * 100).toFixed(1)) : null };
     };
     const buckets = [];
     for (let offset = 2; offset >= 0; offset -= 1) {
       const month = new Date(now.getFullYear(), now.getMonth() - offset, 1);
       const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
       const isCurrentMonth = month.getFullYear() === now.getFullYear() && month.getMonth() === now.getMonth();
-      buckets.push(scoreBucket({
-        axisKey: `month-${offset}`,
-        label: month.toLocaleDateString(locale, { month: 'short' }),
-        section: 'quarter',
-        from: isoDate(month),
-        to: isoDate(isCurrentMonth ? now : monthEnd),
-      }));
+      buckets.push(scoreBucket({ axisKey: `month-${offset}`, label: month.toLocaleDateString(locale, { month: 'short' }), section: 'quarter', from: isoDate(month), to: isoDate(isCurrentMonth ? now : monthEnd) }));
     }
     buckets.push({ axisKey: 'sep-month', label: '', value: null, separator: true });
-
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     let cursor = startOfWeek(monthStart);
     let week = 1;
     while (cursor <= now) {
       const weekEnd = addDays(cursor, 6);
-      buckets.push(scoreBucket({
-        axisKey: `week-${week}`,
-        label: `S${week}`,
-        section: 'month',
-        from: isoDate(cursor < monthStart ? monthStart : cursor),
-        to: isoDate(weekEnd > now ? now : weekEnd),
-      }));
+      buckets.push(scoreBucket({ axisKey: `week-${week}`, label: `S${week}`, section: 'month', from: isoDate(cursor < monthStart ? monthStart : cursor), to: isoDate(weekEnd > now ? now : weekEnd) }));
       cursor = addDays(cursor, 7);
       week += 1;
     }
     buckets.push({ axisKey: 'sep-week', label: '', value: null, separator: true });
-
     const weekStart = startOfWeek(now);
     const currentWeekDay = (now.getDay() + 6) % 7;
     for (let index = 0; index <= currentWeekDay; index += 1) {
       const day = addDays(weekStart, index);
-      buckets.push(scoreBucket({
-        axisKey: `day-${index}`,
-        label: day.toLocaleDateString(locale, { weekday: 'short' }),
-        section: 'week',
-        from: isoDate(day),
-        to: isoDate(day),
-      }));
+      buckets.push(scoreBucket({ axisKey: `day-${index}`, label: day.toLocaleDateString(locale, { weekday: 'short' }), section: 'week', from: isoDate(day), to: isoDate(day) }));
     }
     return buckets;
   }, [entries, locale]);
 
-  const defectData = useMemo(() => {
-    const map = new Map();
-    filtered.forEach((row) => map.set(row.defect_type || 'Autre', (map.get(row.defect_type || 'Autre') || 0) + toNumber(row.scrap_qty)));
-    const sorted = [...map.entries()].map(([name, defects]) => ({ name, defects })).sort((a, b) => b.defects - a.defects);
-    const total = sorted.reduce((sum, row) => sum + row.defects, 0) || 1;
-    let cumulative = 0;
-    return sorted.map((row) => {
-      cumulative += row.defects;
-      return { ...row, name: t(row.name), cumulative: Number(((cumulative / total) * 100).toFixed(0)) };
+  const defectEvolution = useMemo(() => {
+    const byDate = new Map();
+    const typeSet = new Set();
+    filtered.forEach((row) => {
+      if (!row.production_date) return;
+      const day = byDate.get(row.production_date) || { production_date: row.production_date };
+      scrapDefectEntries(row).forEach(([name, quantity]) => {
+        const type = name || 'Autres';
+        typeSet.add(type);
+        day[type] = (day[type] || 0) + quantity;
+      });
+      byDate.set(row.production_date, day);
     });
-  }, [filtered, t]);
+    return {
+      data: [...byDate.values()].sort((a, b) => a.production_date.localeCompare(b.production_date)),
+      types: [...typeSet].sort((a, b) => a.localeCompare(b)),
+    };
+  }, [filtered]);
 
   const machinesForDept = machines.filter((machine) => machine.department === form.department || !machine.department);
   const referencesForDept = references.filter((ref) => ref.family === form.department || !ref.family);
@@ -523,7 +553,9 @@ function App() {
     const qualityMissing = validateQuality(row);
     const computedStatus = row.entry_status || (productionMissing.length || qualityMissing.length ? 'A completer' : 'Complete');
     return computedStatus !== 'Complete' || productionMissing.length > 0 || qualityMissing.length > 0;
-  }), [entries]);
+  }).sort((a, b) => String(b.production_date || '').localeCompare(String(a.production_date || ''))
+    || String(b.created_at || '').localeCompare(String(a.created_at || ''))), [entries]);
+  const visibleIncompleteEntries = showAllIncomplete ? incompleteEntries : incompleteEntries.slice(0, 3);
 
   const qualityQueue = useMemo(() => incompleteEntries.filter((row) => validateProduction(row).length === 0), [incompleteEntries]);
 
@@ -569,6 +601,7 @@ function App() {
       mod_hours: 0,
       operator_names: '',
       defect_type: defaultDefect(activeDept),
+      defect_breakdown: [],
       note: '',
       article_reference: '',
       entry_status: 'Qualite a completer',
@@ -583,6 +616,7 @@ function App() {
     setForm(emptyForm({
       ...row,
       work_hours: row.work_hours ?? row.machine_hours ?? 0,
+      defect_breakdown: defectBreakdownForRow(row),
       article_reference: extractArticleReference(row.note),
       note: extractQualityNote(row.note),
       entry_status: row.entry_status || 'Qualite a completer',
@@ -650,6 +684,10 @@ function App() {
 
   async function saveQualityService(event) {
     event.preventDefault();
+    if (!supabase) {
+      setStatus({ key: 'Supabase non configure: controle qualite non sauvegarde', error: true });
+      return;
+    }
     try {
       const row = {
         ...form,
@@ -664,6 +702,7 @@ function App() {
         mod_hours: toNumber(form.mod_hours),
         operator_names: form.operator_names.trim()
       };
+      row.defect_breakdown = (form.defect_breakdown || []).filter((item) => item.type && toNumber(item.qty) > 0);
       const qualityMissing = validateQuality(row);
       if (qualityMissing.length) {
         setStatus({ key: 'A corriger avant sauvegarde: {fields}', fields: qualityMissing, error: true });
@@ -671,12 +710,14 @@ function App() {
       }
       const note = [
         buildQualityNote(row.article_reference, row.note),
+        row.defect_breakdown.length ? `REPARTITION_DEFAUTS: ${JSON.stringify(row.defect_breakdown)}` : '',
         form.id ? '' : qualityOnlyMarker,
       ].filter(Boolean).join('\n');
       const completion = completionStatus({ ...row, note });
       const payload = {
         ...row,
         article_reference: undefined,
+        defect_type: row.defect_breakdown[0]?.type || row.defect_type,
         note,
         entry_status: completion.status,
         missing_fields: completion.missingFields,
@@ -892,7 +933,7 @@ function App() {
               <button type="button" onClick={startQualityEntry}><PlusCircle size={18} />{t("Nouvelle ligne qualite")}</button>
             </div>
             <label>{t("Date")}<input type="date" value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
-            <label>{t("Departement")}<select value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value, defect_type: defaultDefect(e.target.value) })}>{departments.map((dept) => <option key={dept.key} value={dept.key}>{t(dept.key)}</option>)}</select></label>
+            <label>{t("Departement")}<select value={form.department} onChange={(e) => { const nextDefect = defaultDefect(e.target.value); setForm({ ...form, department: e.target.value, defect_type: nextDefect, defect_breakdown: [] }); }}>{departments.map((dept) => <option key={dept.key} value={dept.key}>{t(dept.key)}</option>)}</select></label>
             <label>{t("Machine / Poste")}<input placeholder={t("Machine / Poste")} value={form.machine_code || ''} onChange={(e) => setForm({ ...form, machine_code: e.target.value })} /></label>
             <label>{t("Reference machine")}<input placeholder={t("Reference machine")} value={form.product_reference || ''} onChange={(e) => setForm({ ...form, product_reference: e.target.value })} /></label>
             <label>{t("OF / Bon")}<input placeholder={t("OF / Bon")} value={form.work_order || ''} onChange={(e) => setForm({ ...form, work_order: e.target.value })} /></label>
@@ -901,7 +942,19 @@ function App() {
             <label>{t("Qte rebut")}<input type="number" min="0" value={form.scrap_qty} onChange={(e) => setForm({ ...form, scrap_qty: e.target.value })} /></label>
             <label>{t("Rebut justifie")}<input type="number" min="0" value={form.justified_scrap_qty} onChange={(e) => setForm({ ...form, justified_scrap_qty: e.target.value })} /></label>
             <label>{t("Purge kg")}<input type="number" min="0" step="0.1" value={form.purge_kg} onChange={(e) => setForm({ ...form, purge_kg: e.target.value })} /></label>
-            <label>{t("Pareto defaut")}<select value={form.defect_type} onChange={(e) => setForm({ ...form, defect_type: e.target.value })}>{defectTypes.map((type) => <option key={type} value={type}>{t(type)}</option>)}</select></label>
+            <div className="defect-breakdown">
+              <strong>{t("Repartition defauts")}</strong>
+              {(form.defect_breakdown || []).map((item, index) => <div className="defect-breakdown-row" key={index}>
+                <input aria-label={`${t("Pareto defaut")} ${index + 1}`} list={`defect-suggestions-${form.department}`} value={item.type} placeholder={t("Saisir ou choisir defaut")} onChange={(e) => setForm({ ...form, defect_breakdown: form.defect_breakdown.map((entry, rowIndex) => rowIndex === index ? { ...entry, type: e.target.value } : entry) })} />
+                <input aria-label={`${t("Quantite defaut")} ${index + 1}`} type="number" min="0" step="1" placeholder={t("Quantite defaut")} value={item.qty} onChange={(e) => setForm({ ...form, defect_breakdown: form.defect_breakdown.map((entry, rowIndex) => rowIndex === index ? { ...entry, qty: e.target.value } : entry) })} />
+                {form.defect_breakdown.length > 1 && <button type="button" aria-label={t("Supprimer defaut")} onClick={() => setForm({ ...form, defect_breakdown: form.defect_breakdown.filter((_, rowIndex) => rowIndex !== index) })}><X size={16} /></button>}
+              </div>)}
+              <datalist id={`defect-suggestions-${form.department}`}>
+                {defectTypes.map((type) => <option key={type} value={type} />)}
+              </datalist>
+              <div className="defect-breakdown-footer"><button type="button" onClick={() => setForm({ ...form, defect_breakdown: [...(form.defect_breakdown || []), { type: '', qty: '' }] })}><PlusCircle size={16} />{t("Ajouter un defaut")}</button><span>{t("Total defauts")}: {breakdownTotal(form.defect_breakdown)} / {toNumber(form.scrap_qty)}</span></div>
+              {form.defect_breakdown?.some((item) => toNumber(item.qty) > 0) && breakdownTotal(form.defect_breakdown) !== toNumber(form.scrap_qty) && <small className="defect-breakdown-error">{t("Total defauts doit correspondre a qte rebut")}</small>}
+            </div>
             <label>{t("Note qualite")}<input placeholder={t("Observation controle")} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
             <div className="sheet-actions">
               <button className="primary" type="submit"><CheckCircle2 size={18} />{t("Valider controle qualite")}</button>
@@ -923,7 +976,7 @@ function App() {
         <table>
           <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Champs manquants")}</th><th>{t("Action")}</th></tr></thead>
           <tbody>
-            {incompleteEntries.map((row, index) => {
+            {visibleIncompleteEntries.map((row, index) => {
               const missing = Array.isArray(row.missing_fields) ? row.missing_fields : completionStatus(row).missingFields;
               return (
                 <tr key={row.id || index}>
@@ -942,10 +995,11 @@ function App() {
             {!incompleteEntries.length && <tr><td colSpan="8" className="empty-row">{t("Aucune saisie incomplete.")}</td></tr>}
           </tbody>
         </table>
+        {incompleteEntries.length > 3 && <div className="incomplete-actions"><button type="button" onClick={() => setShowAllIncomplete((current) => !current)}>{showAllIncomplete ? t("Afficher les 3 dernieres") : t("Afficher tout")}</button></div>}
       </Panel>
 
       <section className="grid charts">
-        <Panel title={t("Evaluation usine")} className="span12 factory-eval-panel">
+        <Panel title={t("Évaluation usine")} className="span6 factory-eval-panel">
           <ResponsiveContainer height={280}>
             <ComposedChart data={factoryEvaluationData} margin={{ top: 24, right: 24, bottom: 8, left: 0 }}>
               <CartesianGrid stroke="#dbe5f2" vertical={false} />
@@ -954,20 +1008,8 @@ function App() {
               <Tooltip formatter={(value, name) => [`${value}%`, t(name)]} />
               <ReferenceLine x="sep-month" stroke="#7fb0ff" strokeDasharray="5 5" />
               <ReferenceLine x="sep-week" stroke="#7fb0ff" strokeDasharray="5 5" />
-              <Area type="monotone" dataKey="value" stroke="none" fill="#8cbcff" fillOpacity={0.28} connectNulls name={t("Evaluation usine")} />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="#287fff"
-                strokeWidth={4}
-                dot={{ r: 5, strokeWidth: 3, fill: '#fff', stroke: '#287fff' }}
-                activeDot={{ r: 7 }}
-                connectNulls
-                name={t("Evaluation usine")}
-                label={({ x, y, value }) => value == null ? null : (
-                  <text x={x} y={y - 12} textAnchor="middle" className="chart-value-label">{Math.round(value)}%</text>
-                )}
-              />
+              <Area type="monotone" dataKey="value" stroke="none" fill="#8cbcff" fillOpacity={0.28} connectNulls name={t("Évaluation usine")} />
+              <Line type="monotone" dataKey="value" stroke="#287fff" strokeWidth={4} dot={{ r: 5, strokeWidth: 3, fill: '#fff', stroke: '#287fff' }} activeDot={{ r: 7 }} connectNulls name={t("Évaluation usine")} label={({ x, y, value }) => value == null ? null : <text x={x} y={y - 12} textAnchor="middle" className="chart-value-label">{Math.round(value)}%</text>} />
             </ComposedChart>
           </ResponsiveContainer>
           <div className="factory-period-labels">
@@ -976,29 +1018,19 @@ function App() {
             <strong>{t("Semaine actuelle")}</strong>
           </div>
         </Panel>
-        <Panel title={t("Pareto des defauts")} className="span4">
-          <ResponsiveContainer height={250}>
-            <ComposedChart data={defectData}>
-              <CartesianGrid stroke="#dbe5f2" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-              <Tooltip formatter={(value, name) => [`${value}%`, t(name)]} />
-              <Line
-                yAxisId="right"
-                dataKey="cumulative"
-                stroke="#ff8124"
-                strokeWidth={4}
-                dot={{ r: 5, strokeWidth: 3, fill: '#fff', stroke: '#ff8124' }}
-                activeDot={{ r: 7 }}
-                name={t("% cumule")}
-                label={({ x, y, value }) => value == null ? null : (
-                  <text x={x} y={y - 12} textAnchor="middle" className="chart-value-label">{Math.round(value)}%</text>
-                )}
-              />
+        <Panel title={t("Evolution des defauts")} className="span6 defect-evolution-panel">
+          <ResponsiveContainer height={320}>
+            <ComposedChart data={defectEvolution.data} margin={{ top: 16, right: 24, bottom: 18, left: 8 }}>
+              <CartesianGrid stroke="#dbe5f2" vertical={false} />
+              <XAxis dataKey="production_date" tick={{ fontSize: 12 }} tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })} />
+              <YAxis allowDecimals={false} />
+              <Tooltip labelFormatter={(value) => formatDate(value)} formatter={(value, name) => [value, t(name)]} />
+              <Legend formatter={(value) => t(value)} />
+              {defectEvolution.types.map((type, index) => <Line key={type} type="monotone" dataKey={type} name={type} stroke={['#287fff', '#ff8124', '#20a77a', '#a855f7', '#e23d3d', '#0891b2', '#d8a80e'][index % 7]} strokeWidth={2.5} connectNulls dot={{ r: 3 }} activeDot={{ r: 6 }} />)}
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
-        <Panel title={t("Comparatif par departement")} className="span8">
+        <Panel title={t("Comparatif par departement")} className="span12">
           <ResponsiveContainer height={320}>
             <ComposedChart data={departmentData}>
               <CartesianGrid stroke="#dbe5f2" />
@@ -1034,7 +1066,7 @@ function App() {
         <table>
           <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Qte bonne")}</th><th>{t("Qte rebut")}</th><th>{t("Rebut justifie")}</th><th>{t("Purge kg")}</th><th>{t("Pareto defaut")}</th><th>{t("Heure travail")}</th><th>{t("MOD")}</th><th>{t("Nom MOD")}</th><th>{t("Total H MOD")}</th><th></th></tr></thead>
           <tbody>
-            {filtered.map((row, index) => (
+            {visibleProductionRows.map((row, index) => (
               <tr key={row.id || index}>
                 <td><span className={row.entry_status === 'Complete' ? 'state-pill complete' : 'state-pill'}>{t(row.entry_status || 'Complete')}</span></td><td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td>{t(row.defect_type)}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
                 <td><button aria-label={t("Completer")} className="icon-only" type="button" onClick={() => editProduction(row)}><Edit3 size={16} /></button><button aria-label={t("Supprimer")} className="icon-only danger-icon" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} /></button></td>
@@ -1043,6 +1075,7 @@ function App() {
             {!filtered.length && <tr><td colSpan="16" className="empty-row">{t("Aucune donnee. Choisissez un departement puis ajoutez une ligne de production.")}</td></tr>}
           </tbody>
         </table>
+        {filtered.length > 3 && <div className="incomplete-actions"><button type="button" onClick={() => setShowAllProduction((current) => !current)}>{showAllProduction ? t("Afficher les 3 dernieres") : t("Afficher tout")}</button></div>}
       </Panel>
 
       {showHistoryWindow && (
