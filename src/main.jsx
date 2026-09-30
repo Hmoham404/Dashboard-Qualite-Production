@@ -869,7 +869,6 @@ function App() {
     <main className="shell">
       <header className="topbar">
         <div className="brand">
-          <img className="brand-logo" src="/quality-logo.svg" alt={t("Qualite")} />
           <div>
             <h1>{t("Dashboard Qualite & Production")}</h1>
             <p>{t("Suivi par departement: Injection, Soudure, Metallisation, Assemblage, Serigraphie")}</p>
@@ -891,7 +890,7 @@ function App() {
         <label>{t("Reference machine")}<select value={filters.reference} onChange={(e) => setFilters({ ...filters, reference: e.target.value })}><option value="Tous">{t("Tous")}</option>{articleReferences.map((ref) => <option key={ref} value={ref}>{ref}</option>)}</select></label>
         <label>{t("OF / Bon")}<select value={filters.workOrder} onChange={(e) => setFilters({ ...filters, workOrder: e.target.value })}><option value="Tous">{t("Tous")}</option>{[...new Set(entries.map((row) => row.work_order).filter(Boolean))].map((of) => <option key={of} value={of}>{of}</option>)}</select></label>
         <button className="primary" type="button"><Search size={18} />{t("Appliquer")}</button>
-        <button className="export-button" type="button" onClick={exportExcel}><FileDown size={18} />{t("Exporter Excel")}</button>
+        <button className="export-button" type="button"><FileDown size={18} />{t("Exporter Excel")}</button>
         <button type="button" onClick={resetDemo}><RefreshCcw size={18} />{t("Reinitialiser")}</button>
       </section>
 
