@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
@@ -402,6 +402,7 @@ async function deleteRow(name, row) {
 }
 
 function App() {
+  const sheetPanelRef = useRef(null);
   const [language, setLanguage] = useState(() => readLanguage());
   const t = useMemo(() => createTranslator(language), [language]);
   const locale = languages.find(({ code }) => code === language).locale;
@@ -623,6 +624,7 @@ function App() {
       missing_fields: row.missing_fields || completionStatus(row).missingFields,
     }));
     setStatus({ key: 'Ligne chargee pour completion: {department} / {machine}', department: row.department, machine: row.machine_code || t('Non renseigne') });
+    window.requestAnimationFrame(() => sheetPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
   function startQualityEntry() {
@@ -867,6 +869,7 @@ function App() {
     <main className="shell">
       <header className="topbar">
         <div className="brand">
+          <img className="brand-logo" src="/quality-logo.svg" alt={t("Qualite")} />
           <div>
             <h1>{t("Dashboard Qualite & Production")}</h1>
             <p>{t("Suivi par departement: Injection, Soudure, Metallisation, Assemblage, Serigraphie")}</p>
@@ -906,7 +909,7 @@ function App() {
         <button className={serviceMode === 'quality' ? 'active' : ''} type="button" onClick={() => setServiceMode('quality')}><CheckCircle2 size={18} />{t("Service qualite")}</button>
       </section>
 
-      <Panel title={serviceMode === 'production' ? t("Saisie service production") : t("Saisie service qualite")} className="sheet-panel">
+      <Panel ref={sheetPanelRef} title={serviceMode === 'production' ? t("Saisie service production") : t("Saisie service qualite")} className="sheet-panel">
         {serviceMode === 'production' ? (
           <form className="sheet-form production-sheet" onSubmit={saveProductionService}>
             <label>{t("Date")}<input type="date" value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
@@ -968,20 +971,23 @@ function App() {
             machine: status.machine,
             count: status.count?.toLocaleString(locale),
             fields: status.fields?.map((field) => t(field)).join(locale === 'ar' ? '، ' : ', '),
-          })}</span>
+          })}
+            {status.error && status.fields?.length > 0 && <ul className="save-error-fields">{status.fields.map((field) => <li key={field}>{t(field)}</li>)}</ul>}
+            {status.error && status.values?.error && <div className="save-error-detail">{status.values.error}</div>}
+          </span>
         </div>
       </Panel>
 
       <Panel title={t("Saisies a completer")} className="incomplete-panel">
         <table>
-          <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Champs manquants")}</th><th>{t("Action")}</th></tr></thead>
+          <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Pareto defaut")}</th><th>{t("Champs manquants")}</th><th>{t("Action")}</th></tr></thead>
           <tbody>
             {visibleIncompleteEntries.map((row, index) => {
               const missing = Array.isArray(row.missing_fields) ? row.missing_fields : completionStatus(row).missingFields;
               return (
                 <tr key={row.id || index}>
                   <td><span className="state-pill">{t(row.entry_status || 'A completer')}</span></td>
-                  <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code || '-'}</td><td>{row.product_reference || '-'}</td><td>{row.work_order || '-'}</td><td>{missing.map((field) => t(field)).join(locale === 'ar' ? '، ' : ', ')}</td>
+                  <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code || '-'}</td><td>{row.product_reference || '-'}</td><td>{row.work_order || '-'}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{missing.map((field) => t(field)).join(locale === 'ar' ? '، ' : ', ')}</td>
                   <td>
                     <div className="row-actions">
                       <button className="compact-action" type="button" onClick={() => editProduction(row, 'production')}><Edit3 size={16} />{t("Prod")}</button>
@@ -992,7 +998,7 @@ function App() {
                 </tr>
               );
             })}
-            {!incompleteEntries.length && <tr><td colSpan="8" className="empty-row">{t("Aucune saisie incomplete.")}</td></tr>}
+            {!incompleteEntries.length && <tr><td colSpan="9" className="empty-row">{t("Aucune saisie incomplete.")}</td></tr>}
           </tbody>
         </table>
         {incompleteEntries.length > 3 && <div className="incomplete-actions"><button type="button" onClick={() => setShowAllIncomplete((current) => !current)}>{showAllIncomplete ? t("Afficher les 3 dernieres") : t("Afficher tout")}</button></div>}
@@ -1068,7 +1074,7 @@ function App() {
           <tbody>
             {visibleProductionRows.map((row, index) => (
               <tr key={row.id || index}>
-                <td><span className={row.entry_status === 'Complete' ? 'state-pill complete' : 'state-pill'}>{t(row.entry_status || 'Complete')}</span></td><td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td>{t(row.defect_type)}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
+                <td><span className={row.entry_status === 'Complete' ? 'state-pill complete' : 'state-pill'}>{t(row.entry_status || 'Complete')}</span></td><td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
                 <td><button aria-label={t("Completer")} className="icon-only" type="button" onClick={() => editProduction(row)}><Edit3 size={16} /></button><button aria-label={t("Supprimer")} className="icon-only danger-icon" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} /></button></td>
               </tr>
             ))}
@@ -1094,7 +1100,7 @@ function App() {
                 <tbody>
                   {entries.map((row, index) => (
                     <tr key={row.id || index}>
-                      <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td>{t(row.defect_type)}</td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
+                    <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
                       <td><button className="danger-button compact-danger" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} />{t("Supprimer")}</button></td>
                     </tr>
                   ))}
@@ -1125,8 +1131,19 @@ function App() {
   );
 }
 
-function Panel({ title, className = '', children }) {
-  return <section className={`panel ${className}`}><h2>{title}</h2>{children}</section>;
+function DefectBreakdown({ row, t, locale }) {
+  const totals = new Map();
+  scrapDefectEntries(row).forEach(([type, quantity]) => {
+    const name = type || 'Autres';
+    totals.set(name, (totals.get(name) || 0) + quantity);
+  });
+  return <div className="table-defect-list">{[...totals].map(([type, quantity]) => (
+    <span className="table-defect-item" key={type}><strong>{t(type)}</strong><small>{quantity.toLocaleString(locale)}</small></span>
+  ))}</div>;
 }
+
+const Panel = React.forwardRef(function Panel({ title, className = '', children }, ref) {
+  return <section ref={ref} className={`panel ${className}`}><h2>{title}</h2>{children}</section>;
+});
 
 createRoot(document.getElementById('root')).render(<App />);
