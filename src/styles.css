@@ -1391,6 +1391,126 @@ tr:nth-child(even) td { background: #f8fafb; }
   margin-top: 12px;
 }
 
+.complaint-chart-panel {
+  order: -1;
+}
+
+.chart-filter-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 0;
+}
+
+.chart-filter-row label {
+  width: min(100%, 260px);
+  gap: 5px;
+  color: #60738b;
+  font-size: .82rem;
+}
+
+.chart-filter-row select {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #cbd8e5;
+  border-radius: 8px;
+}
+
+.chart-tooltip {
+  display: grid;
+  gap: 5px;
+  min-width: 190px;
+  padding: 10px 12px;
+  border: 1px solid #d4dfeb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(7, 31, 62, .16);
+  font-size: .82rem;
+}
+
+.chart-tooltip small {
+  margin-top: 3px;
+  color: #60738b;
+}
+
+.department-data-notice {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid #f3d28e;
+  border-radius: 8px;
+  background: #fff8e7;
+  color: #73521b;
+  font-size: .88rem;
+}
+
+.defect-pareto-controls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 10px 0 14px;
+}
+
+.defect-pareto-controls > label {
+  width: min(100%, 260px);
+  gap: 5px;
+  color: #60738b;
+  font-size: .82rem;
+}
+
+.defect-pareto-controls select,
+.defect-pareto-controls input {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #cbd8e5;
+  border-radius: 8px;
+}
+
+.defect-mode-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+.defect-mode-toggle button {
+  min-width: 76px;
+  min-height: 38px;
+  padding: 7px 14px;
+  border: 1px solid #cbd8e5;
+  border-radius: 8px;
+  background: #fff;
+  color: #31527a;
+  font-weight: 700;
+}
+
+.defect-mode-toggle button.active {
+  border-color: #164f8e;
+  background: #164f8e;
+  color: #fff;
+}
+
+.defect-type-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 18px;
+  margin: 8px 0 4px;
+  color: #31527a;
+  font-size: .8rem;
+}
+
+.defect-type-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.defect-type-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
 .complaints-table th:last-child,
 .complaints-table td:last-child {
   width: 80px;

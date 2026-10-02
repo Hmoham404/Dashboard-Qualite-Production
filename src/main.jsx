@@ -7,6 +7,7 @@ import {
   BarChart,
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Legend,
   Line,
@@ -137,6 +138,10 @@ function toNumber(value) {
 
 function isoDate(date) {
   return date.toISOString().slice(0, 10);
+}
+
+function localDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function startOfWeek(date) {
@@ -421,12 +426,25 @@ function App() {
   const [references, setReferences] = useState(seedReferences);
   const [assignments, setAssignments] = useState(seedAssignments);
   const [customerComplaints, setCustomerComplaints] = useState([]);
+  const [sortingHours, setSortingHours] = useState([]);
+  const [sortingModalDate, setSortingModalDate] = useState('');
+  const [sortingDepartment, setSortingDepartment] = useState('Injection');
+  const [sortingHoursValue, setSortingHoursValue] = useState('');
+  const [sortingSaving, setSortingSaving] = useState(false);
+  const [sortingError, setSortingError] = useState('');
+  const [sortingChartDate, setSortingChartDate] = useState('');
   const [complaintChartDate, setComplaintChartDate] = useState('');
   const [complaintModalDate, setComplaintModalDate] = useState('');
   const [complaintDraft, setComplaintDraft] = useState('');
   const [complaintSaving, setComplaintSaving] = useState(false);
   const [complaintError, setComplaintError] = useState('');
   const [complaintDeleteCandidate, setComplaintDeleteCandidate] = useState(null);
+  const [defectParetoMode, setDefectParetoMode] = useState('cumulative');
+  const [defectParetoDate, setDefectParetoDate] = useState(() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return localDateKey(yesterday);
+  });
   const [status, setStatus] = useState({ key: supabase ? 'Connecte a Supabase' : 'Mode local: ajoutez .env pour Supabase' });
   const [showHistoryWindow, setShowHistoryWindow] = useState(false);
   const [showAllIncomplete, setShowAllIncomplete] = useState(false);
@@ -475,10 +493,24 @@ function App() {
     if (!supabase) return;
     supabase.from('customer_complaints').select('*').order('complaint_date', { ascending: true }).then(({ data, error }) => {
       if (error) {
-        setComplaintError('Impossible de charger les réclamations. Vérifiez le schéma Supabase.');
+        const missingTable = ['PGRST205', '42P01'].includes(error.code);
+        setComplaintError(missingTable
+          ? 'Table customer_complaints absente : exécutez supabase-customer-complaints.sql dans le SQL Editor Supabase, puis rechargez.'
+          : 'Connexion Supabase impossible pour les réclamations. Vérifiez les paramètres réseau et les règles d’accès.');
         return;
       }
       setCustomerComplaints((data || []).map((row) => ({ id: row.id, date: row.complaint_date, details: row.details })));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.from('sorting_hours').select('*').order('sorting_date', { ascending: true }).then(({ data, error }) => {
+      if (error) {
+        setSortingError('Table sorting_hours absente : exécutez supabase-sorting-hours.sql dans le SQL Editor Supabase.');
+        return;
+      }
+      setSortingHours((data || []).map((row) => ({ id: row.id, date: row.sorting_date, department: row.department, hours: toNumber(row.hours) })));
     });
   }, []);
 
@@ -510,39 +542,64 @@ function App() {
 
   const customerComplaintData = useMemo(() => {
     const rows = [];
-    const start = new Date(2026, 9, 1);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
       const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
       rows.push({ date, complaints: customerComplaints.some((complaint) => complaint.date === date) ? 1 : 0 });
     }
     return rows;
   }, [customerComplaints]);
 
+  const sortingHoursData = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const rows = [];
+    for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
+      const date = localDateKey(day);
+      const row = { date };
+      departments.forEach(({ key }) => {
+        row[key] = sortingHours.filter((item) => item.date === date && item.department === key).reduce((sum, item) => sum + toNumber(item.hours), 0);
+      });
+      rows.push(row);
+    }
+    return rows;
+  }, [sortingHours]);
+
   const departmentTargetTrend = useMemo(() => {
     const targetRate = scrapTargetsByDepartment[activeDept] ?? 0;
     const perDay = new Map();
-    entries.filter((entry) => entry.department === activeDept && entry.production_date >= '2026-10-01').forEach((entry) => {
+    const departmentEntries = entries.filter((entry) => entry.department === activeDept && entry.production_date);
+    departmentEntries.forEach((entry) => {
       const totals = perDay.get(entry.production_date) || { good: 0, scrap: 0 };
       totals.good += toNumber(entry.good_qty);
       totals.scrap += toNumber(entry.scrap_qty);
       perDay.set(entry.production_date, totals);
     });
     const rows = [];
-    const start = new Date(2026, 9, 1);
+    const baselineStart = new Date(2026, 9, 1);
+    const earliestEntryDate = departmentEntries.reduce((earliest, entry) => {
+      const date = new Date(`${entry.production_date}T00:00:00`);
+      return date < earliest ? date : earliest;
+    }, baselineStart);
+    const start = new Date(earliestEntryDate);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
       const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
       const totals = perDay.get(date);
-      const rate = totals && totals.good + totals.scrap > 0
+      const hasProduction = Boolean(totals && totals.good + totals.scrap > 0);
+      const rate = hasProduction
         ? Number(((totals.scrap / (totals.good + totals.scrap)) * 100).toFixed(2))
-        : null;
-      rows.push({ date, rate, targetRate, gap: rate == null ? null : Number((rate - targetRate).toFixed(2)) });
+        : 0;
+      rows.push({ date, rate, targetRate, hasProduction });
     }
     return rows;
   }, [entries, activeDept]);
+  const hasSelectedDepartmentProduction = departmentTargetTrend.some((row) => row.hasProduction);
 
   function openCustomerComplaintForm(date = complaintChartDate) {
     if (!date) return;
@@ -566,12 +623,49 @@ function App() {
     const { data, error } = await supabase.from('customer_complaints').insert({ complaint_date: complaintModalDate, details: complaintDraft.trim() }).select().single();
     setComplaintSaving(false);
     if (error) {
-      setComplaintError('Enregistrement impossible. Vérifiez que la table customer_complaints existe dans Supabase.');
+      const missingTable = ['PGRST205', '42P01'].includes(error.code);
+      setComplaintError(missingTable
+        ? 'Table customer_complaints absente : exécutez supabase-customer-complaints.sql dans le SQL Editor Supabase, puis rechargez.'
+        : `Échec Supabase : ${error.message}`);
       return;
     }
     setCustomerComplaints((current) => [...current, { id: data.id, date: data.complaint_date, details: data.details }].sort((a, b) => a.date.localeCompare(b.date)));
     setComplaintModalDate('');
     setComplaintDraft('');
+  }
+
+  function openSortingHoursForm(date = sortingChartDate) {
+    if (!date) return;
+    const existing = sortingHours.find((item) => item.date === date && item.department === activeDept);
+    setSortingModalDate(date);
+    setSortingDepartment(activeDept);
+    setSortingHoursValue(existing ? String(existing.hours) : '');
+    setSortingError('');
+  }
+
+  async function saveSortingHours(event) {
+    event.preventDefault();
+    if (!supabase) {
+      setSortingError('Configurez Supabase pour enregistrer les heures de tri en ligne.');
+      return;
+    }
+    setSortingSaving(true);
+    setSortingError('');
+    const { data, error } = await supabase.from('sorting_hours').upsert({
+      sorting_date: sortingModalDate,
+      department: sortingDepartment,
+      hours: Number(String(sortingHoursValue).replace(',', '.')),
+    }, { onConflict: 'sorting_date,department' }).select().single();
+    setSortingSaving(false);
+    if (error) {
+      setSortingError('Enregistrement impossible. Exécutez supabase-sorting-hours.sql dans le SQL Editor Supabase.');
+      return;
+    }
+    setSortingHours((current) => [
+      ...current.filter((item) => !(item.date === data.sorting_date && item.department === data.department)),
+      { id: data.id, date: data.sorting_date, department: data.department, hours: toNumber(data.hours) },
+    ]);
+    setSortingModalDate('');
   }
 
   async function deleteCustomerComplaint(complaint) {
@@ -621,24 +715,51 @@ function App() {
     return buckets;
   }, [entries, activeDept, locale]);
 
-  const defectEvolution = useMemo(() => {
-    const byDate = new Map();
-    const typeSet = new Set();
-    filtered.forEach((row) => {
-      if (!row.production_date) return;
-      const day = byDate.get(row.production_date) || { production_date: row.production_date };
-      scrapDefectEntries(row).forEach(([name, quantity]) => {
-        const type = name || 'Autres';
-        typeSet.add(type);
-        day[type] = (day[type] || 0) + quantity;
-      });
-      byDate.set(row.production_date, day);
-    });
-    return {
-      data: [...byDate.values()].sort((a, b) => a.production_date.localeCompare(b.production_date)),
-      types: [...typeSet].sort((a, b) => a.localeCompare(b)),
+  const defectPareto = useMemo(() => {
+    const departmentRows = entries.filter((row) => row.department === activeDept && row.production_date);
+    const defectsByDate = new Map();
+    const rejectedQuantity = (row) => {
+      const recordedScrap = Math.max(0, toNumber(row.scrap_qty));
+      const defectTotal = scrapDefectEntries(row).reduce((sum, [, quantity]) => sum + Math.max(0, quantity), 0);
+      return recordedScrap || defectTotal;
     };
-  }, [filtered]);
+
+    if (defectParetoMode === 'j1') {
+      const selectedDate = defectParetoDate;
+      const rows = departmentRows.filter((row) => row.production_date === selectedDate);
+      const details = new Map();
+      rows.forEach((row) => scrapDefectEntries(row).forEach(([name, quantity]) => {
+        if (quantity <= 0) return;
+        const type = name || 'Autres';
+        details.set(type, (details.get(type) || 0) + quantity);
+      }));
+      const data = [...details].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count);
+      const total = data.reduce((sum, item) => sum + item.count, 0);
+      return {
+        date: selectedDate,
+        total,
+        hasEntries: rows.length > 0,
+        data,
+      };
+    }
+
+    departmentRows.forEach((row) => {
+      defectsByDate.set(row.production_date, (defectsByDate.get(row.production_date) || 0) + rejectedQuantity(row));
+    });
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const start = departmentRows.reduce((earliest, row) => {
+      const date = new Date(`${row.production_date}T00:00:00`);
+      return date < earliest ? date : earliest;
+    }, monthStart);
+    const data = [];
+    for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
+      const date = localDateKey(day);
+      data.push({ date, total: defectsByDate.get(date) || 0 });
+    }
+    return { data };
+  }, [entries, activeDept, defectParetoMode, defectParetoDate]);
 
   const machinesForDept = machines.filter((machine) => machine.department === form.department || !machine.department);
   const referencesForDept = references.filter((ref) => ref.family === form.department || !ref.family);
@@ -1101,31 +1222,47 @@ function App() {
       </Panel>
 
       <section className="grid charts">
-        <Panel title={`Taux de rebut et target — ${t(activeDept)}`} className="span12">
-          <p className="chart-instruction">Écart = taux réel − target ({scrapTargetsByDepartment[activeDept] ?? 0} %).</p>
+        <Panel title={`Taux de rebut et target — ${t(activeDept)}`} className="span12 target-chart-panel">
+          <p className="chart-instruction">Target du département : {scrapTargetsByDepartment[activeDept] ?? 0} %.</p>
+          <div className="chart-filter-row">
+            <label>{t("Departement")}
+              <select value={activeDept} onChange={(event) => selectDepartment(event.target.value)}>
+                {departments.map((department) => <option key={department.key} value={department.key}>{t(department.key)}</option>)}
+              </select>
+            </label>
+          </div>
+          {!hasSelectedDepartmentProduction && <p className="department-data-notice">Aucune quantité de production ou de rebut saisie pour {t(activeDept)} sur la période affichée. Le taux réel apparaît à 0 %. Choisissez le département correspondant aux lignes saisies.</p>}
           <ResponsiveContainer height={280}>
             <ComposedChart data={departmentTargetTrend} margin={{ top: 12, right: 18, bottom: 8, left: 8 }}>
               <CartesianGrid stroke="#dbe5f2" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' })} />
               <YAxis yAxisId="rate" domain={[0, 'auto']} tickFormatter={(value) => `${value}%`} />
-              <YAxis yAxisId="gap" orientation="right" domain={['auto', 'auto']} tickFormatter={(value) => `${value}%`} />
-              <Tooltip labelFormatter={(value) => formatDate(value)} formatter={(value, name) => [`${value}%`, name]} />
+              <Tooltip
+                labelFormatter={(value) => formatDate(value)}
+                formatter={(value, name) => [`${value}%`, name]}
+                content={({ active, payload, label }) => active && payload?.length ? (
+                  <div className="chart-tooltip">
+                    <strong>{formatDate(label)}</strong>
+                    {payload.map((item) => <div key={item.dataKey} style={{ color: item.color }}>{item.name}: {item.value}%</div>)}
+                    {!payload[0]?.payload?.hasProduction && <small>Production non saisie : taux réel affiché à 0 %.</small>}
+                  </div>
+                ) : null}
+              />
               <Legend />
               <Line yAxisId="rate" type="monotone" dataKey="rate" name="Taux de rebut réel" stroke="#287fff" strokeWidth={3} connectNulls={false} dot={{ r: 3 }} activeDot={{ r: 6 }} />
               <Line yAxisId="rate" type="monotone" dataKey="targetRate" name="Target du département" stroke="#f59e0b" strokeWidth={3} strokeDasharray="7 5" dot={false} activeDot={false} />
-              <Line yAxisId="gap" type="monotone" dataKey="gap" name="Écart au target (points %)" stroke="#e23d3d" strokeWidth={2.5} connectNulls={false} dot={{ r: 2 }} activeDot={{ r: 5 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
-        <Panel title="Réclamations clients — 0 = aucune, 1 = réclamation" className="span12">
-          <p className="chart-instruction">Double-cliquez sur la courbe à la date souhaitée pour ajouter une réclamation. Les données sont enregistrées dans Supabase.</p>
+        <Panel title={`Réclamations clients — ${new Date().toLocaleDateString(locale, { month: 'long', year: 'numeric' })}`} className="span12 complaint-chart-panel">
+          <p className="chart-instruction">Du 1er au dernier jour du mois. Chaque point : 1 le jour de la réclamation, 0 sinon. Double-cliquez sur une date pour ajouter une réclamation.</p>
           <ResponsiveContainer height={260}>
             <ComposedChart data={customerComplaintData} onMouseMove={(state) => state?.activeLabel && setComplaintChartDate(state.activeLabel)} onDoubleClick={(state) => openCustomerComplaintForm(state?.activeLabel || complaintChartDate)}>
               <CartesianGrid stroke="#dbe5f2" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' })} />
+              <XAxis dataKey="date" interval={0} minTickGap={0} tick={{ fontSize: 11 }} tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit' })} />
               <YAxis allowDecimals={false} domain={[0, 1]} ticks={[0, 1]} />
               <Tooltip labelFormatter={(value) => formatDate(value)} formatter={(value) => [value, 'Réclamation client']} />
-              <Line type="stepAfter" dataKey="complaints" name="Réclamation client" stroke="#e23d3d" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 7 }} />
+              <Line type="linear" dataKey="complaints" name="Réclamation client" stroke="#e23d3d" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 7 }} />
             </ComposedChart>
           </ResponsiveContainer>
           {complaintError && <p className="complaint-error" role="alert">{complaintError}</p>}
@@ -1143,7 +1280,7 @@ function App() {
             </table>
           </div>
         </Panel>
-        <Panel title={t("Évaluation usine")} className="span6 factory-eval-panel">
+        <Panel title={t("Évaluation usine")} className="span12 factory-eval-panel">
           <ResponsiveContainer height={280}>
             <ComposedChart data={factoryEvaluationData} margin={{ top: 24, right: 24, bottom: 8, left: 0 }}>
               <CartesianGrid stroke="#dbe5f2" vertical={false} />
@@ -1162,35 +1299,73 @@ function App() {
             <strong>{t("Semaine actuelle")}</strong>
           </div>
         </Panel>
-        <Panel title={t("Evolution des defauts")} className="span6 defect-evolution-panel">
-          <ResponsiveContainer height={320}>
-            <ComposedChart data={defectEvolution.data} margin={{ top: 16, right: 24, bottom: 18, left: 8 }}>
-              <CartesianGrid stroke="#dbe5f2" vertical={false} />
-              <XAxis dataKey="production_date" tick={{ fontSize: 12 }} tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })} />
-              <YAxis allowDecimals={false} />
-              <Tooltip labelFormatter={(value) => formatDate(value)} formatter={(value, name) => [value, t(name)]} />
-              <Legend formatter={(value) => t(value)} />
-              {defectEvolution.types.map((type, index) => <Line key={type} type="monotone" dataKey={type} name={type} stroke={['#287fff', '#ff8124', '#20a77a', '#a855f7', '#e23d3d', '#0891b2', '#d8a80e'][index % 7]} strokeWidth={2.5} connectNulls dot={{ r: 3 }} activeDot={{ r: 6 }} />)}
-            </ComposedChart>
-          </ResponsiveContainer>
-        </Panel>
-        <Panel title={`${t("Comparatif par departement")} — ${t(activeDept)}`} className="span12">
-          <ResponsiveContainer height={320}>
-            <ComposedChart data={departmentData}>
-              <CartesianGrid stroke="#dbe5f2" />
-              <XAxis dataKey="name" />
-              <YAxis yAxisId="right" orientation="right" domain={[0, 12]} />
-              <Tooltip />
-              <Legend />
-              <Line yAxisId="right" type="monotone" dataKey="targetRate" stroke="#f59e0b" strokeWidth={3} strokeDasharray="7 6" dot={false} activeDot={false} name={t("Target rebut (%)")} />
-              <Line yAxisId="right" dataKey="rate" stroke="#667a94" strokeWidth={3} dot={<RateDot />} activeDot={<RateDot r={8} />} label={<RateTargetLabel />} name={t("Q/R (%)")} />
-            </ComposedChart>
-          </ResponsiveContainer>
-          <div className="rate-status-legend">
-            <span><i className="rate-under" />{t("Sous target")}</span>
-            <span><i className="rate-equal" />{t("Au target")}</span>
-            <span><i className="rate-over" />{t("Depasse target")}</span>
+        <Panel title={`Rebuts par jour — ${t(activeDept)}`} className="span12 defect-evolution-panel">
+          <div className="defect-pareto-controls">
+            <label>{t("Departement")}
+              <select value={activeDept} onChange={(event) => selectDepartment(event.target.value)}>
+                {departments.map((department) => <option key={department.key} value={department.key}>{t(department.key)}</option>)}
+              </select>
+            </label>
+            <label>Date à analyser
+              <input type="date" value={defectParetoDate} max={localDateKey(new Date())} onChange={(event) => {
+                setDefectParetoDate(event.target.value);
+                setDefectParetoMode('j1');
+              }} />
+            </label>
+            <div className="defect-mode-toggle" role="group" aria-label="Période du Pareto">
+              <button type="button" className={defectParetoMode === 'j1' ? 'active' : ''} onClick={() => {
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                setDefectParetoDate(localDateKey(yesterday));
+                setDefectParetoMode('j1');
+              }}>J-1</button>
+              <button type="button" className={defectParetoMode === 'cumulative' ? 'active' : ''} onClick={() => setDefectParetoMode('cumulative')}>Cumul</button>
+            </div>
           </div>
+          {defectParetoMode === 'j1' ? <>
+            <p className="chart-instruction">Total des rebuts le {formatDate(defectPareto.date)} : {defectPareto.total.toLocaleString(locale)} — détail par type de défaut.</p>
+            {!defectPareto.hasEntries && <p className="empty-history">Aucune saisie pour ce département à cette date.</p>}
+            <ResponsiveContainer height={260}>
+              <BarChart data={defectPareto.data} margin={{ top: 12, right: 18, bottom: 8, left: 8 }}>
+                <CartesianGrid stroke="#dbe5f2" vertical={false} />
+                <XAxis dataKey="type" interval={0} angle={-15} textAnchor="end" height={56} />
+                <YAxis allowDecimals={false} />
+                <Tooltip formatter={(value) => [`${value} rebuts`, 'Défaut']} />
+                <Bar dataKey="count" name="Rebuts par défaut" radius={[5, 5, 0, 0]}>
+                  {defectPareto.data.map((item, index) => <Cell key={item.type} fill={['#287fff', '#ff8124', '#20a77a', '#a855f7', '#e23d3d', '#0891b2', '#d8a80e'][index % 7]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            {!!defectPareto.data.length && <div className="defect-type-legend">
+              {defectPareto.data.map((item, index) => <span key={item.type}><i style={{ backgroundColor: ['#287fff', '#ff8124', '#20a77a', '#a855f7', '#e23d3d', '#0891b2', '#d8a80e'][index % 7] }} />{item.type}</span>)}
+            </div>}
+          </> : <>
+            <p className="chart-instruction">Total réel des rebuts par jour pour {t(activeDept)}. Chaque barre correspond à une date.</p>
+            <ResponsiveContainer height={320}>
+              <BarChart data={defectPareto.data} margin={{ top: 12, right: 18, bottom: 8, left: 8 }}>
+                <CartesianGrid stroke="#dbe5f2" vertical={false} />
+                <XAxis dataKey="date" interval="preserveStartEnd" tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' })} />
+                <YAxis allowDecimals={false} tickFormatter={(value) => Number(value).toLocaleString(locale)} />
+                <Tooltip labelFormatter={(value) => formatDate(value)} formatter={(value) => [`${value} rebuts`, 'Total journalier']} />
+                <Bar dataKey="total" name="Total des rebuts" fill="#f4b400" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </>}
+        </Panel>
+        <Panel title={`Heures de tri par jour — ${new Date().toLocaleDateString(locale, { month: 'long', year: 'numeric' })}`} className="span12 sorting-hours-panel">
+          <p className="chart-instruction">Double-cliquez sur une date pour saisir les heures de tri du département. Chaque barre montre le total journalier par département.</p>
+          {sortingError && <p className="complaint-error" role="alert">{sortingError}</p>}
+          {!supabase && <p className="complaint-error">Supabase n’est pas configuré. Les heures de tri ne seront pas enregistrées localement.</p>}
+          <ResponsiveContainer height={320}>
+            <BarChart data={sortingHoursData} margin={{ top: 12, right: 18, bottom: 8, left: 8 }} onMouseMove={(state) => state?.activeLabel && setSortingChartDate(state.activeLabel)} onDoubleClick={(state) => openSortingHoursForm(state?.activeLabel || sortingChartDate)}>
+              <CartesianGrid stroke="#dbe5f2" vertical={false} />
+              <XAxis dataKey="date" interval="preserveStartEnd" tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit' })} />
+              <YAxis allowDecimals tickFormatter={(value) => `${value} h`} />
+              <Tooltip labelFormatter={(value) => formatDate(value)} formatter={(value, name) => [`${value} h`, t(name)]} />
+              <Legend formatter={(value) => t(value)} />
+              {departments.map(({ key }, index) => <Bar key={key} dataKey={key} name={key} fill={['#287fff', '#ff8124', '#20a77a', '#a855f7', '#e23d3d'][index % 5]} radius={[3, 3, 0, 0]} />)}
+            </BarChart>
+          </ResponsiveContainer>
         </Panel>
       </section>
 
@@ -1247,6 +1422,29 @@ function App() {
               </table>
             </div>
           </section>
+        </div>
+      )}
+
+      {sortingModalDate && (
+        <div className="complaint-modal" role="dialog" aria-modal="true" aria-labelledby="sorting-modal-title">
+          <form className="complaint-window" onSubmit={saveSortingHours}>
+            <header><h2 id="sorting-modal-title">Heures de tri</h2><button className="icon-only" type="button" onClick={() => setSortingModalDate('')} aria-label="Fermer"><X size={18} /></button></header>
+            <label>Date<input type="date" value={sortingModalDate} onChange={(event) => {
+              const date = event.target.value;
+              setSortingModalDate(date);
+              const existing = sortingHours.find((item) => item.date === date && item.department === sortingDepartment);
+              setSortingHoursValue(existing ? String(existing.hours) : '');
+            }} required /></label>
+            <label>Département<select value={sortingDepartment} onChange={(event) => {
+              const department = event.target.value;
+              setSortingDepartment(department);
+              const existing = sortingHours.find((item) => item.date === sortingModalDate && item.department === department);
+              setSortingHoursValue(existing ? String(existing.hours) : '');
+            }}>{departments.map((department) => <option key={department.key} value={department.key}>{t(department.key)}</option>)}</select></label>
+            <label>Heures de tri<input type="number" min="0" step="0.1" value={sortingHoursValue} onChange={(event) => setSortingHoursValue(event.target.value)} placeholder="Ex. 2,5" required /></label>
+            {sortingError && <p className="complaint-error" role="alert">{sortingError}</p>}
+            <div className="complaint-actions"><button type="button" onClick={() => setSortingModalDate('')}>Annuler</button><button className="primary" type="submit" disabled={sortingSaving || !supabase || sortingHoursValue === ''}>{sortingSaving ? 'Enregistrement…' : 'Enregistrer en ligne'}</button></div>
+          </form>
         </div>
       )}
 

@@ -67,11 +67,21 @@ create table if not exists customer_complaints (
   created_at timestamptz not null default now()
 );
 
+create table if not exists sorting_hours (
+  id uuid primary key default gen_random_uuid(),
+  sorting_date date not null,
+  department text not null,
+  hours numeric(8,2) not null default 0 check (hours >= 0),
+  created_at timestamptz not null default now(),
+  unique (sorting_date, department)
+);
+
 alter table machines enable row level security;
 alter table product_references enable row level security;
 alter table production_entries enable row level security;
 alter table mod_assignments enable row level security;
 alter table customer_complaints enable row level security;
+alter table sorting_hours enable row level security;
 
 create policy "anon read machines" on machines for select using (true);
 create policy "anon write machines" on machines for insert with check (true);
@@ -97,3 +107,10 @@ drop policy if exists "anon delete customer complaints" on customer_complaints;
 create policy "anon read customer complaints" on customer_complaints for select using (true);
 create policy "anon insert customer complaints" on customer_complaints for insert with check (true);
 create policy "anon delete customer complaints" on customer_complaints for delete using (true);
+
+drop policy if exists "anon read sorting hours" on sorting_hours;
+drop policy if exists "anon insert sorting hours" on sorting_hours;
+drop policy if exists "anon update sorting hours" on sorting_hours;
+create policy "anon read sorting hours" on sorting_hours for select using (true);
+create policy "anon insert sorting hours" on sorting_hours for insert with check (true);
+create policy "anon update sorting hours" on sorting_hours for update using (true) with check (true);
