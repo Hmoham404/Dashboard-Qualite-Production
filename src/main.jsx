@@ -62,11 +62,11 @@ const defectTypesByDepartment = {
 };
 
 const scrapTargetsByDepartment = {
-  Injection: 2,
+  Injection: 3,
   Soudure: 0.5,
   Metallisation: 7,
-  Assemblage: 0.2,
-  Serigraphie: 0.2,
+  Assemblage: 0.5,
+  Serigraphie: 0.5,
 };
 const scrapRateColors = {
   over: '#e23d3d',
@@ -420,6 +420,13 @@ function App() {
   const [machines, setMachines] = useState(seedMachines);
   const [references, setReferences] = useState(seedReferences);
   const [assignments, setAssignments] = useState(seedAssignments);
+  const [customerComplaints, setCustomerComplaints] = useState([]);
+  const [complaintChartDate, setComplaintChartDate] = useState('');
+  const [complaintModalDate, setComplaintModalDate] = useState('');
+  const [complaintDraft, setComplaintDraft] = useState('');
+  const [complaintSaving, setComplaintSaving] = useState(false);
+  const [complaintError, setComplaintError] = useState('');
+  const [complaintDeleteCandidate, setComplaintDeleteCandidate] = useState(null);
   const [status, setStatus] = useState({ key: supabase ? 'Connecte a Supabase' : 'Mode local: ajoutez .env pour Supabase' });
   const [showHistoryWindow, setShowHistoryWindow] = useState(false);
   const [showAllIncomplete, setShowAllIncomplete] = useState(false);
@@ -464,6 +471,17 @@ function App() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.from('customer_complaints').select('*').order('complaint_date', { ascending: true }).then(({ data, error }) => {
+      if (error) {
+        setComplaintError('Impossible de charger les réclamations. Vérifiez le schéma Supabase.');
+        return;
+      }
+      setCustomerComplaints((data || []).map((row) => ({ id: row.id, date: row.complaint_date, details: row.details })));
+    });
+  }, []);
+
   const filtered = useMemo(() => {
     return entries.filter((item) => {
       const inDate = item.production_date >= filters.from && item.production_date <= filters.to;
@@ -480,18 +498,97 @@ function App() {
     return showAllProduction ? latestFirst : latestFirst.slice(0, 3);
   }, [filtered, showAllProduction]);
 
-  const departmentData = useMemo(() => departments.map((dept) => {
+  const departmentData = useMemo(() => {
+    const dept = departments.find((item) => item.key === activeDept);
+    if (!dept) return [];
     const rows = entries.filter((entry) => entry.department === dept.key);
     const production = rows.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
     const scrap = rows.reduce((sum, row) => sum + toNumber(row.scrap_qty), 0);
     const rate = production + scrap ? Number(((scrap / (production + scrap)) * 100).toFixed(1)) : 0;
-    return { key: dept.key, name: t(dept.key), production, scrap, rate, targetRate: scrapTargetsByDepartment[dept.key] ?? 0 };
-  }), [entries, t]);
+    return [{ key: dept.key, name: t(dept.key), production, scrap, rate, targetRate: scrapTargetsByDepartment[dept.key] ?? 0 }];
+  }, [entries, activeDept, t]);
+
+  const customerComplaintData = useMemo(() => {
+    const rows = [];
+    const start = new Date(2026, 9, 1);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
+      const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+      rows.push({ date, complaints: customerComplaints.some((complaint) => complaint.date === date) ? 1 : 0 });
+    }
+    return rows;
+  }, [customerComplaints]);
+
+  const departmentTargetTrend = useMemo(() => {
+    const targetRate = scrapTargetsByDepartment[activeDept] ?? 0;
+    const perDay = new Map();
+    entries.filter((entry) => entry.department === activeDept && entry.production_date >= '2026-10-01').forEach((entry) => {
+      const totals = perDay.get(entry.production_date) || { good: 0, scrap: 0 };
+      totals.good += toNumber(entry.good_qty);
+      totals.scrap += toNumber(entry.scrap_qty);
+      perDay.set(entry.production_date, totals);
+    });
+    const rows = [];
+    const start = new Date(2026, 9, 1);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
+      const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+      const totals = perDay.get(date);
+      const rate = totals && totals.good + totals.scrap > 0
+        ? Number(((totals.scrap / (totals.good + totals.scrap)) * 100).toFixed(2))
+        : null;
+      rows.push({ date, rate, targetRate, gap: rate == null ? null : Number((rate - targetRate).toFixed(2)) });
+    }
+    return rows;
+  }, [entries, activeDept]);
+
+  function openCustomerComplaintForm(date = complaintChartDate) {
+    if (!date) return;
+    setComplaintModalDate(date);
+    setComplaintDraft('');
+    setComplaintError('');
+  }
+
+  async function saveCustomerComplaint(event) {
+    event.preventDefault();
+    if (!supabase) {
+      setComplaintError('Enregistrement en ligne indisponible : configurez Supabase pour enregistrer les réclamations.');
+      return;
+    }
+    if (!complaintDraft.trim()) {
+      setComplaintError('Saisissez le détail de la réclamation.');
+      return;
+    }
+    setComplaintSaving(true);
+    setComplaintError('');
+    const { data, error } = await supabase.from('customer_complaints').insert({ complaint_date: complaintModalDate, details: complaintDraft.trim() }).select().single();
+    setComplaintSaving(false);
+    if (error) {
+      setComplaintError('Enregistrement impossible. Vérifiez que la table customer_complaints existe dans Supabase.');
+      return;
+    }
+    setCustomerComplaints((current) => [...current, { id: data.id, date: data.complaint_date, details: data.details }].sort((a, b) => a.date.localeCompare(b.date)));
+    setComplaintModalDate('');
+    setComplaintDraft('');
+  }
+
+  async function deleteCustomerComplaint(complaint) {
+    const { error } = await supabase.from('customer_complaints').delete().eq('id', complaint.id);
+    if (error) {
+      setComplaintError('Suppression impossible. Vérifiez la règle de suppression Supabase.');
+      setComplaintDeleteCandidate(null);
+      return;
+    }
+    setCustomerComplaints((current) => current.filter((item) => item.id !== complaint.id));
+    setComplaintDeleteCandidate(null);
+  }
 
   const factoryEvaluationData = useMemo(() => {
     const now = new Date();
     const scoreBucket = (bucket) => {
-      const rows = entries.filter((entry) => entry.production_date >= bucket.from && entry.production_date <= bucket.to);
+      const rows = entries.filter((entry) => entry.department === activeDept && entry.production_date >= bucket.from && entry.production_date <= bucket.to);
       const good = rows.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
       const scrap = rows.reduce((sum, row) => sum + toNumber(row.scrap_qty), 0);
       const total = good + scrap;
@@ -522,7 +619,7 @@ function App() {
       buckets.push(scoreBucket({ axisKey: `day-${index}`, label: day.toLocaleDateString(locale, { weekday: 'short' }), section: 'week', from: isoDate(day), to: isoDate(day) }));
     }
     return buckets;
-  }, [entries, locale]);
+  }, [entries, activeDept, locale]);
 
   const defectEvolution = useMemo(() => {
     const byDate = new Map();
@@ -1004,6 +1101,48 @@ function App() {
       </Panel>
 
       <section className="grid charts">
+        <Panel title={`Taux de rebut et target — ${t(activeDept)}`} className="span12">
+          <p className="chart-instruction">Écart = taux réel − target ({scrapTargetsByDepartment[activeDept] ?? 0} %).</p>
+          <ResponsiveContainer height={280}>
+            <ComposedChart data={departmentTargetTrend} margin={{ top: 12, right: 18, bottom: 8, left: 8 }}>
+              <CartesianGrid stroke="#dbe5f2" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' })} />
+              <YAxis yAxisId="rate" domain={[0, 'auto']} tickFormatter={(value) => `${value}%`} />
+              <YAxis yAxisId="gap" orientation="right" domain={['auto', 'auto']} tickFormatter={(value) => `${value}%`} />
+              <Tooltip labelFormatter={(value) => formatDate(value)} formatter={(value, name) => [`${value}%`, name]} />
+              <Legend />
+              <Line yAxisId="rate" type="monotone" dataKey="rate" name="Taux de rebut réel" stroke="#287fff" strokeWidth={3} connectNulls={false} dot={{ r: 3 }} activeDot={{ r: 6 }} />
+              <Line yAxisId="rate" type="monotone" dataKey="targetRate" name="Target du département" stroke="#f59e0b" strokeWidth={3} strokeDasharray="7 5" dot={false} activeDot={false} />
+              <Line yAxisId="gap" type="monotone" dataKey="gap" name="Écart au target (points %)" stroke="#e23d3d" strokeWidth={2.5} connectNulls={false} dot={{ r: 2 }} activeDot={{ r: 5 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </Panel>
+        <Panel title="Réclamations clients — 0 = aucune, 1 = réclamation" className="span12">
+          <p className="chart-instruction">Double-cliquez sur la courbe à la date souhaitée pour ajouter une réclamation. Les données sont enregistrées dans Supabase.</p>
+          <ResponsiveContainer height={260}>
+            <ComposedChart data={customerComplaintData} onMouseMove={(state) => state?.activeLabel && setComplaintChartDate(state.activeLabel)} onDoubleClick={(state) => openCustomerComplaintForm(state?.activeLabel || complaintChartDate)}>
+              <CartesianGrid stroke="#dbe5f2" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' })} />
+              <YAxis allowDecimals={false} domain={[0, 1]} ticks={[0, 1]} />
+              <Tooltip labelFormatter={(value) => formatDate(value)} formatter={(value) => [value, 'Réclamation client']} />
+              <Line type="stepAfter" dataKey="complaints" name="Réclamation client" stroke="#e23d3d" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 7 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+          {complaintError && <p className="complaint-error" role="alert">{complaintError}</p>}
+          {!supabase && <p className="complaint-error">Supabase n’est pas configuré. Aucune réclamation ne sera enregistrée localement.</p>}
+          <div className="complaints-table-wrap">
+            <table className="complaints-table">
+              <thead><tr><th>Date</th><th>Réclamation client</th><th>Action</th></tr></thead>
+              <tbody>
+                {customerComplaints.map((complaint) => <tr key={complaint.id}>
+                  <td>{formatDate(complaint.date)}</td><td>{complaint.details}</td>
+                  <td><button className="icon-only danger-icon" type="button" aria-label={`Supprimer la réclamation du ${formatDate(complaint.date)}`} onClick={() => setComplaintDeleteCandidate(complaint)}><Trash2 size={16} /></button></td>
+                </tr>)}
+                {!customerComplaints.length && <tr><td colSpan="3" className="empty-row">Aucune réclamation enregistrée.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
         <Panel title={t("Évaluation usine")} className="span6 factory-eval-panel">
           <ResponsiveContainer height={280}>
             <ComposedChart data={factoryEvaluationData} margin={{ top: 24, right: 24, bottom: 8, left: 0 }}>
@@ -1035,7 +1174,7 @@ function App() {
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
-        <Panel title={t("Comparatif par departement")} className="span12">
+        <Panel title={`${t("Comparatif par departement")} — ${t(activeDept)}`} className="span12">
           <ResponsiveContainer height={320}>
             <ComposedChart data={departmentData}>
               <CartesianGrid stroke="#dbe5f2" />
@@ -1107,6 +1246,28 @@ function App() {
                 </tbody>
               </table>
             </div>
+          </section>
+        </div>
+      )}
+
+      {complaintModalDate && (
+        <div className="complaint-modal" role="dialog" aria-modal="true" aria-labelledby="complaint-modal-title">
+          <form className="complaint-window" onSubmit={saveCustomerComplaint}>
+            <header><h2 id="complaint-modal-title">Nouvelle réclamation client</h2><button className="icon-only" type="button" onClick={() => setComplaintModalDate('')} aria-label="Fermer"><X size={18} /></button></header>
+            <label>Date de réclamation<input type="date" value={complaintModalDate} onChange={(event) => setComplaintModalDate(event.target.value)} required /></label>
+            <label>Détail<textarea value={complaintDraft} onChange={(event) => setComplaintDraft(event.target.value)} rows="4" placeholder="Décrivez la réclamation du client…" required autoFocus /></label>
+            {complaintError && <p className="complaint-error" role="alert">{complaintError}</p>}
+            <div className="complaint-actions"><button type="button" onClick={() => setComplaintModalDate('')}>Annuler</button><button className="primary" type="submit" disabled={complaintSaving || !supabase}>{complaintSaving ? 'Enregistrement…' : 'Enregistrer en ligne'}</button></div>
+          </form>
+        </div>
+      )}
+
+      {complaintDeleteCandidate && (
+        <div className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="complaint-delete-title">
+          <section className="confirm-window">
+            <header><Trash2 size={22} /><h2 id="complaint-delete-title">Supprimer cette réclamation ?</h2></header>
+            <p>{formatDate(complaintDeleteCandidate.date)} — {complaintDeleteCandidate.details}</p>
+            <div className="confirm-actions"><button type="button" onClick={() => setComplaintDeleteCandidate(null)}>Annuler</button><button className="danger-button" type="button" onClick={() => deleteCustomerComplaint(complaintDeleteCandidate)}>Supprimer</button></div>
           </section>
         </div>
       )}

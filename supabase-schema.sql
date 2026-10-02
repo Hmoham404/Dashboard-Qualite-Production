@@ -60,10 +60,18 @@ create table if not exists mod_assignments (
   created_at timestamptz not null default now()
 );
 
+create table if not exists customer_complaints (
+  id uuid primary key default gen_random_uuid(),
+  complaint_date date not null,
+  details text not null,
+  created_at timestamptz not null default now()
+);
+
 alter table machines enable row level security;
 alter table product_references enable row level security;
 alter table production_entries enable row level security;
 alter table mod_assignments enable row level security;
+alter table customer_complaints enable row level security;
 
 create policy "anon read machines" on machines for select using (true);
 create policy "anon write machines" on machines for insert with check (true);
@@ -82,3 +90,10 @@ create policy "anon read mod" on mod_assignments for select using (true);
 create policy "anon write mod" on mod_assignments for insert with check (true);
 create policy "anon update mod" on mod_assignments for update using (true);
 create policy "anon delete mod" on mod_assignments for delete using (true);
+
+drop policy if exists "anon read customer complaints" on customer_complaints;
+drop policy if exists "anon insert customer complaints" on customer_complaints;
+drop policy if exists "anon delete customer complaints" on customer_complaints;
+create policy "anon read customer complaints" on customer_complaints for select using (true);
+create policy "anon insert customer complaints" on customer_complaints for insert with check (true);
+create policy "anon delete customer complaints" on customer_complaints for delete using (true);
