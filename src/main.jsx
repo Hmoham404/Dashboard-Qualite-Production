@@ -430,6 +430,8 @@ function App() {
   const [sortingModalDate, setSortingModalDate] = useState('');
   const [sortingDepartment, setSortingDepartment] = useState('Injection');
   const [sortingHoursValue, setSortingHoursValue] = useState('');
+  const [sortingGoodQtyValue, setSortingGoodQtyValue] = useState('');
+  const [sortingScrapQtyValue, setSortingScrapQtyValue] = useState('');
   const [sortingSaving, setSortingSaving] = useState(false);
   const [sortingError, setSortingError] = useState('');
   const [sortingChartDate, setSortingChartDate] = useState('');
@@ -510,7 +512,14 @@ function App() {
         setSortingError('Table sorting_hours absente : exécutez supabase-sorting-hours.sql dans le SQL Editor Supabase.');
         return;
       }
-      setSortingHours((data || []).map((row) => ({ id: row.id, date: row.sorting_date, department: row.department, hours: toNumber(row.hours) })));
+      setSortingHours((data || []).map((row) => ({
+        id: row.id,
+        date: row.sorting_date,
+        department: row.department,
+        hours: toNumber(row.hours),
+        goodQty: toNumber(row.good_qty),
+        scrapQty: toNumber(row.scrap_qty),
+      })));
     });
   }, []);
 
@@ -562,7 +571,10 @@ function App() {
       const date = localDateKey(day);
       const row = { date };
       departments.forEach(({ key }) => {
-        row[key] = sortingHours.filter((item) => item.date === date && item.department === key).reduce((sum, item) => sum + toNumber(item.hours), 0);
+        const departmentRows = sortingHours.filter((item) => item.date === date && item.department === key);
+        row[key] = departmentRows.reduce((sum, item) => sum + toNumber(item.hours), 0);
+        row[`${key}GoodQty`] = departmentRows.reduce((sum, item) => sum + toNumber(item.goodQty), 0);
+        row[`${key}ScrapQty`] = departmentRows.reduce((sum, item) => sum + toNumber(item.scrapQty), 0);
       });
       rows.push(row);
     }
@@ -640,6 +652,8 @@ function App() {
     setSortingModalDate(date);
     setSortingDepartment(activeDept);
     setSortingHoursValue(existing ? String(existing.hours) : '');
+    setSortingGoodQtyValue(existing ? String(existing.goodQty) : '');
+    setSortingScrapQtyValue(existing ? String(existing.scrapQty) : '');
     setSortingError('');
   }
 
@@ -655,15 +669,24 @@ function App() {
       sorting_date: sortingModalDate,
       department: sortingDepartment,
       hours: Number(String(sortingHoursValue).replace(',', '.')),
+      good_qty: Number(sortingGoodQtyValue),
+      scrap_qty: Number(sortingScrapQtyValue),
     }, { onConflict: 'sorting_date,department' }).select().single();
     setSortingSaving(false);
     if (error) {
-      setSortingError('Enregistrement impossible. Exécutez supabase-sorting-hours.sql dans le SQL Editor Supabase.');
+      setSortingError(`Enregistrement impossible. Vérifiez la migration supabase-sorting-hours.sql dans le SQL Editor Supabase. Détail : ${error.message}`);
       return;
     }
     setSortingHours((current) => [
       ...current.filter((item) => !(item.date === data.sorting_date && item.department === data.department)),
-      { id: data.id, date: data.sorting_date, department: data.department, hours: toNumber(data.hours) },
+      {
+        id: data.id,
+        date: data.sorting_date,
+        department: data.department,
+        hours: toNumber(data.hours),
+        goodQty: toNumber(data.good_qty),
+        scrapQty: toNumber(data.scrap_qty),
+      },
     ]);
     setSortingModalDate('');
   }
@@ -1280,25 +1303,6 @@ function App() {
             </table>
           </div>
         </Panel>
-        <Panel title={t("Évaluation usine")} className="span12 factory-eval-panel">
-          <ResponsiveContainer height={280}>
-            <ComposedChart data={factoryEvaluationData} margin={{ top: 24, right: 24, bottom: 8, left: 0 }}>
-              <CartesianGrid stroke="#dbe5f2" vertical={false} />
-              <XAxis dataKey="axisKey" tickFormatter={(_, index) => factoryEvaluationData[index]?.label || ''} interval={0} />
-              <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-              <Tooltip formatter={(value, name) => [`${value}%`, t(name)]} />
-              <ReferenceLine x="sep-month" stroke="#7fb0ff" strokeDasharray="5 5" />
-              <ReferenceLine x="sep-week" stroke="#7fb0ff" strokeDasharray="5 5" />
-              <Area type="monotone" dataKey="value" stroke="none" fill="#8cbcff" fillOpacity={0.28} connectNulls name={t("Évaluation usine")} />
-              <Line type="monotone" dataKey="value" stroke="#287fff" strokeWidth={4} dot={{ r: 5, strokeWidth: 3, fill: '#fff', stroke: '#287fff' }} activeDot={{ r: 7 }} connectNulls name={t("Évaluation usine")} label={({ x, y, value }) => value == null ? null : <text x={x} y={y - 12} textAnchor="middle" className="chart-value-label">{Math.round(value)}%</text>} />
-            </ComposedChart>
-          </ResponsiveContainer>
-          <div className="factory-period-labels">
-            <strong>{t("3 derniers mois")}</strong>
-            <strong>{t("Mois actuel")}</strong>
-            <strong>{t("Semaine actuelle")}</strong>
-          </div>
-        </Panel>
         <Panel title={`Rebuts par jour — ${t(activeDept)}`} className="span12 defect-evolution-panel">
           <div className="defect-pareto-controls">
             <label>{t("Departement")}
@@ -1353,7 +1357,7 @@ function App() {
           </>}
         </Panel>
         <Panel title={`Heures de tri par jour — ${new Date().toLocaleDateString(locale, { month: 'long', year: 'numeric' })}`} className="span12 sorting-hours-panel">
-          <p className="chart-instruction">Double-cliquez sur une date pour saisir les heures de tri du département. Chaque barre montre le total journalier par département.</p>
+          <p className="chart-instruction">Survolez une barre pour voir les heures, quantités bonnes et rebuts de chaque département. Double-cliquez sur une date pour modifier la saisie.</p>
           {sortingError && <p className="complaint-error" role="alert">{sortingError}</p>}
           {!supabase && <p className="complaint-error">Supabase n’est pas configuré. Les heures de tri ne seront pas enregistrées localement.</p>}
           <ResponsiveContainer height={320}>
@@ -1361,7 +1365,20 @@ function App() {
               <CartesianGrid stroke="#dbe5f2" vertical={false} />
               <XAxis dataKey="date" interval="preserveStartEnd" tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit' })} />
               <YAxis allowDecimals tickFormatter={(value) => `${value} h`} />
-              <Tooltip labelFormatter={(value) => formatDate(value)} formatter={(value, name) => [`${value} h`, t(name)]} />
+              <Tooltip content={({ active, payload, label }) => {
+                const row = payload?.[0]?.payload;
+                if (!active || !row) return null;
+                const visibleDepartments = departments.filter(({ key }) => toNumber(row[key]) || toNumber(row[`${key}GoodQty`]) || toNumber(row[`${key}ScrapQty`]));
+                return <div className="recharts-default-tooltip" style={{ direction: 'ltr', padding: '10px 12px', border: '1px solid #d3dfec', borderRadius: 6, background: '#fff', boxShadow: '0 4px 14px rgba(11, 54, 98, .12)' }}>
+                  <p className="recharts-tooltip-label" style={{ margin: '0 0 8px', fontWeight: 700 }}>{formatDate(label)}</p>
+                  {visibleDepartments.map(({ key }) => <div key={key} style={{ marginTop: 6 }}>
+                    <strong>{t(key)}</strong>
+                    <div>{t('Heures de tri')}: {toNumber(row[key]).toLocaleString(locale)} h</div>
+                    <div>{t('Qte bonne après tri')}: {toNumber(row[`${key}GoodQty`]).toLocaleString(locale)}</div>
+                    <div>{t('Qte rebut après tri')}: {toNumber(row[`${key}ScrapQty`]).toLocaleString(locale)}</div>
+                  </div>)}
+                </div>;
+              }} />
               <Legend formatter={(value) => t(value)} />
               {departments.map(({ key }, index) => <Bar key={key} dataKey={key} name={key} fill={['#287fff', '#ff8124', '#20a77a', '#a855f7', '#e23d3d'][index % 5]} radius={[3, 3, 0, 0]} />)}
             </BarChart>
@@ -1434,16 +1451,22 @@ function App() {
               setSortingModalDate(date);
               const existing = sortingHours.find((item) => item.date === date && item.department === sortingDepartment);
               setSortingHoursValue(existing ? String(existing.hours) : '');
+              setSortingGoodQtyValue(existing ? String(existing.goodQty) : '');
+              setSortingScrapQtyValue(existing ? String(existing.scrapQty) : '');
             }} required /></label>
             <label>Département<select value={sortingDepartment} onChange={(event) => {
               const department = event.target.value;
               setSortingDepartment(department);
               const existing = sortingHours.find((item) => item.date === sortingModalDate && item.department === department);
               setSortingHoursValue(existing ? String(existing.hours) : '');
+              setSortingGoodQtyValue(existing ? String(existing.goodQty) : '');
+              setSortingScrapQtyValue(existing ? String(existing.scrapQty) : '');
             }}>{departments.map((department) => <option key={department.key} value={department.key}>{t(department.key)}</option>)}</select></label>
             <label>Heures de tri<input type="number" min="0" step="0.1" value={sortingHoursValue} onChange={(event) => setSortingHoursValue(event.target.value)} placeholder="Ex. 2,5" required /></label>
+            <label>{t('Qte bonne après tri')}<input type="number" min="0" step="1" value={sortingGoodQtyValue} onChange={(event) => setSortingGoodQtyValue(event.target.value)} placeholder="0" required /></label>
+            <label>{t('Qte rebut après tri')}<input type="number" min="0" step="1" value={sortingScrapQtyValue} onChange={(event) => setSortingScrapQtyValue(event.target.value)} placeholder="0" required /></label>
             {sortingError && <p className="complaint-error" role="alert">{sortingError}</p>}
-            <div className="complaint-actions"><button type="button" onClick={() => setSortingModalDate('')}>Annuler</button><button className="primary" type="submit" disabled={sortingSaving || !supabase || sortingHoursValue === ''}>{sortingSaving ? 'Enregistrement…' : 'Enregistrer en ligne'}</button></div>
+            <div className="complaint-actions"><button type="button" onClick={() => setSortingModalDate('')}>Annuler</button><button className="primary" type="submit" disabled={sortingSaving || !supabase || sortingHoursValue === '' || sortingGoodQtyValue === '' || sortingScrapQtyValue === ''}>{sortingSaving ? 'Enregistrement…' : 'Enregistrer en ligne'}</button></div>
           </form>
         </div>
       )}

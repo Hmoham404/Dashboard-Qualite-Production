@@ -6,9 +6,15 @@ create table if not exists public.sorting_hours (
   sorting_date date not null,
   department text not null,
   hours numeric(8,2) not null default 0 check (hours >= 0),
+  good_qty integer not null default 0 check (good_qty >= 0),
+  scrap_qty integer not null default 0 check (scrap_qty >= 0),
   created_at timestamptz not null default now(),
   unique (sorting_date, department)
 );
+
+-- Add these columns to installations that already have the sorting_hours table.
+alter table public.sorting_hours add column if not exists good_qty integer not null default 0 check (good_qty >= 0);
+alter table public.sorting_hours add column if not exists scrap_qty integer not null default 0 check (scrap_qty >= 0);
 
 alter table public.sorting_hours enable row level security;
 

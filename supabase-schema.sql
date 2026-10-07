@@ -72,9 +72,14 @@ create table if not exists sorting_hours (
   sorting_date date not null,
   department text not null,
   hours numeric(8,2) not null default 0 check (hours >= 0),
+  good_qty integer not null default 0 check (good_qty >= 0),
+  scrap_qty integer not null default 0 check (scrap_qty >= 0),
   created_at timestamptz not null default now(),
   unique (sorting_date, department)
 );
+
+alter table sorting_hours add column if not exists good_qty integer not null default 0 check (good_qty >= 0);
+alter table sorting_hours add column if not exists scrap_qty integer not null default 0 check (scrap_qty >= 0);
 
 alter table machines enable row level security;
 alter table product_references enable row level security;

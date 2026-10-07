@@ -77,6 +77,9 @@ Reference machine|Machine reference|مرجع الآلة|机器编号|Riferimento
 Choisir reference|Choose a reference|اختر مرجعاً|选择编号|Scegli riferimento
 Qte bonne|Good quantity|الكمية السليمة|合格数量|Quantità conforme
 Qte rebut|Scrap quantity|كمية المرفوضات|废品数量|Quantità scarti
+Heures de tri|Sorting hours|ساعات الفرز|分拣工时|Ore di selezione
+Qte bonne après tri|Good quantity after sorting|الكمية الجيدة بعد الفرز|分拣后合格数量|Quantità conforme dopo la selezione
+Qte rebut après tri|Scrap quantity after sorting|كمية المرفوضات بعد الفرز|分拣后废品数量|Quantità scarti dopo la selezione
 Rebut justifie|Justified scrap|المرفوضات المبررة|已说明原因的废品|Scarti giustificati
 Purge kg|Purge (kg)|التطهير (كغ)|清机料（千克）|Spurgo (kg)
 Pareto defaut|Defect category|نوع العيب|缺陷类型|Tipo di difetto
