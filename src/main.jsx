@@ -1220,14 +1220,14 @@ function App() {
 
       <Panel title={t("Saisies a completer")} className="incomplete-panel">
         <table>
-          <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Pareto defaut")}</th><th>{t("Champs manquants")}</th><th>{t("Action")}</th></tr></thead>
+          <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("Reference article")}</th><th>{t("OF / Bon")}</th><th>{t("Pareto defaut")}</th><th>{t("Champs manquants")}</th><th>{t("Action")}</th></tr></thead>
           <tbody>
             {visibleIncompleteEntries.map((row, index) => {
               const missing = Array.isArray(row.missing_fields) ? row.missing_fields : completionStatus(row).missingFields;
               return (
                 <tr key={row.id || index}>
                   <td><span className="state-pill">{t(row.entry_status || 'A completer')}</span></td>
-                  <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code || '-'}</td><td>{row.product_reference || '-'}</td><td>{row.work_order || '-'}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{missing.map((field) => t(field)).join(locale === 'ar' ? '، ' : ', ')}</td>
+                  <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code || '-'}</td><td>{row.product_reference || '-'}</td><td>{row.article_reference || extractArticleReference(row.note) || '-'}</td><td>{row.work_order || '-'}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{missing.map((field) => t(field)).join(locale === 'ar' ? '، ' : ', ')}</td>
                   <td>
                     <div className="row-actions">
                       <button className="compact-action" type="button" onClick={() => editProduction(row, 'production')}><Edit3 size={16} />{t("Prod")}</button>
@@ -1238,7 +1238,7 @@ function App() {
                 </tr>
               );
             })}
-            {!incompleteEntries.length && <tr><td colSpan="9" className="empty-row">{t("Aucune saisie incomplete.")}</td></tr>}
+            {!incompleteEntries.length && <tr><td colSpan="10" className="empty-row">{t("Aucune saisie incomplete.")}</td></tr>}
           </tbody>
         </table>
         {incompleteEntries.length > 3 && <div className="incomplete-actions"><button type="button" onClick={() => setShowAllIncomplete((current) => !current)}>{showAllIncomplete ? t("Afficher les 3 dernieres") : t("Afficher tout")}</button></div>}
@@ -1400,15 +1400,15 @@ function App() {
 
       <Panel title={t("Detail de la production")}>
         <table>
-          <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Qte bonne")}</th><th>{t("Qte rebut")}</th><th>{t("Rebut justifie")}</th><th>{t("Purge kg")}</th><th>{t("Pareto defaut")}</th><th>{t("Heure travail")}</th><th>{t("MOD")}</th><th>{t("Nom MOD")}</th><th>{t("Total H MOD")}</th><th></th></tr></thead>
+          <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("Reference article")}</th><th>{t("OF / Bon")}</th><th>{t("Qte bonne")}</th><th>{t("Qte rebut")}</th><th>{t("Rebut justifie")}</th><th>{t("Purge kg")}</th><th>{t("Pareto defaut")}</th><th>{t("Heure travail")}</th><th>{t("MOD")}</th><th>{t("Nom MOD")}</th><th>{t("Total H MOD")}</th><th></th></tr></thead>
           <tbody>
             {visibleProductionRows.map((row, index) => (
               <tr key={row.id || index}>
-                <td><span className={row.entry_status === 'Complete' ? 'state-pill complete' : 'state-pill'}>{t(row.entry_status || 'Complete')}</span></td><td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
+                <td><span className={row.entry_status === 'Complete' ? 'state-pill complete' : 'state-pill'}>{t(row.entry_status || 'Complete')}</span></td><td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.article_reference || extractArticleReference(row.note)}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
                 <td><button aria-label={t("Completer")} className="icon-only" type="button" onClick={() => editProduction(row)}><Edit3 size={16} /></button><button aria-label={t("Supprimer")} className="icon-only danger-icon" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} /></button></td>
               </tr>
             ))}
-            {!filtered.length && <tr><td colSpan="16" className="empty-row">{t("Aucune donnee. Choisissez un departement puis ajoutez une ligne de production.")}</td></tr>}
+            {!filtered.length && <tr><td colSpan="17" className="empty-row">{t("Aucune donnee. Choisissez un departement puis ajoutez une ligne de production.")}</td></tr>}
           </tbody>
         </table>
         {filtered.length > 3 && <div className="incomplete-actions"><button type="button" onClick={() => setShowAllProduction((current) => !current)}>{showAllProduction ? t("Afficher les 3 dernieres") : t("Afficher tout")}</button></div>}
