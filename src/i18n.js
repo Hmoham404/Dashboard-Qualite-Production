@@ -20,6 +20,44 @@ export function readLanguage(storage) {
 // French source keys keep stored department/defect identifiers independent of display language.
 // Columns: French | English | Arabic | Simplified Chinese | Italian.
 const rows = `
+Gestion mensuelle|Monthly management|الإدارة الشهرية|月度管理|Gestione mensile
+Mois affiché|Displayed month|الشهر المعروض|显示月份|Mese visualizzato
+Mois ouvert|Open month|شهر مفتوح|月份开放|Mese aperto
+Mois clôturé · lecture seule|Closed month · read only|شهر مقفل · للقراءة فقط|月份已结账 · 只读|Mese chiuso · sola lettura
+Actualiser|Refresh|تحديث|刷新|Aggiorna
+Exporter le mois|Export month|تصدير الشهر|导出月份|Esporta mese
+Clôturer le mois|Close month|إقفال الشهر|月度结账|Chiudi mese
+Le mois courant s’ouvre automatiquement. Les mois précédents restent conservés.|The current month opens automatically. Previous months are retained.|يفتح الشهر الحالي تلقائيًا. تبقى الأشهر السابقة محفوظة.|自动打开当前月份，保留以往月份的数据。|Il mese corrente si apre automaticamente. I mesi precedenti restano conservati.
+Clôturé le|Closed on|تاريخ الإقفال|结账时间|Chiuso il
+Mode local : les données et clôtures sont conservées dans ce navigateur. Exportez le bilan pour en garder une copie.|Local mode: data and closures are kept in this browser. Export the report to keep a copy.|الوضع المحلي: تُحفظ البيانات والإقفالات في هذا المتصفح. صدّر التقرير للاحتفاظ بنسخة.|本地模式：数据和结账记录保存在此浏览器中。请导出报表以保留副本。|Modalità locale: dati e chiusure sono conservati in questo browser. Esporta il bilancio per conservarne una copia.
+Clôture à activer : exécutez supabase-monthly-archives.sql dans Supabase.|To enable month closing, run supabase-monthly-archives.sql in Supabase.|لتفعيل الإقفال، نفّذ supabase-monthly-archives.sql في Supabase.|要启用月度结账，请在 Supabase 中执行 supabase-monthly-archives.sql。|Per attivare la chiusura, esegui supabase-monthly-archives.sql in Supabase.
+Impossible de vérifier les clôtures. Actualisez avant de modifier les données.|Cannot check month closures. Refresh before editing data.|تعذر التحقق من الإقفالات. حدّث البيانات قبل تعديلها.|无法检查结账状态。请刷新后再修改数据。|Impossibile verificare le chiusure. Aggiorna prima di modificare i dati.
+Chargement des données…|Loading data…|جارٍ تحميل البيانات…|正在加载数据…|Caricamento dei dati…
+Chargement impossible. Aucune donnée de démonstration ne remplace vos données.|Loading failed. Your data is not replaced with demo data.|تعذر التحميل. لن تُستبدل بياناتك ببيانات تجريبية.|加载失败。不会用演示数据替换您的数据。|Caricamento non riuscito. I dati non vengono sostituiti con dati dimostrativi.
+Réinitialiser les filtres|Reset filters|إعادة تعيين المرشحات|重置筛选|Reimposta filtri
+Mois clôturé : les données sont en lecture seule.|Month closed: data is read only.|الشهر مقفل: البيانات للقراءة فقط.|月份已结账：数据只读。|Mese chiuso: i dati sono in sola lettura.
+Attendez la fin du chargement ou actualisez les données.|Wait for loading to finish or refresh the data.|انتظر اكتمال التحميل أو حدّث البيانات.|请等待加载完成或刷新数据。|Attendi il caricamento o aggiorna i dati.
+La date doit appartenir au mois affiché.|The date must be within the displayed month.|يجب أن يكون التاريخ ضمن الشهر المعروض.|日期必须属于显示的月份。|La data deve appartenere al mese visualizzato.
+Archive indisponible. Actualisez les données.|Archive unavailable. Refresh the data.|الأرشيف غير متاح. حدّث البيانات.|归档不可用。请刷新数据。|Archivio non disponibile. Aggiorna i dati.
+Mois clôturé. Vous pouvez réessayer l’export Excel.|Month closed. You can retry the Excel export.|تم إقفال الشهر. يمكنك إعادة محاولة التصدير إلى Excel.|月份已结账。您可以重试导出 Excel。|Mese chiuso. Puoi riprovare l’esportazione Excel.
+Historique du mois|Monthly history|سجل الشهر|月度历史|Storico del mese
+Confirmer la clôture|Confirm month closing|تأكيد الإقفال|确认月度结账|Conferma chiusura
+Une archive complète sera conservée et le bilan Excel sera téléchargé.|A complete archive will be retained and the Excel report will be downloaded.|سيُحفظ أرشيف كامل وسيتم تنزيل تقرير Excel.|将保留完整归档并下载 Excel 报表。|Verrà conservato un archivio completo e scaricato il bilancio Excel.
+Réclamations|Complaints|الشكاوى|投诉|Reclami
+{count} saisie(s) à compléter seront conservées dans l’archive.|{count} incomplete entries will be retained in the archive.|سيُحفظ {count} سجل غير مكتمل في الأرشيف.|归档将保留 {count} 条未完成记录。|{count} registrazioni incomplete saranno conservate nell’archivio.
+Après validation, les ajouts, modifications et suppressions de ce mois seront bloqués pour tous les départements. La consultation et l’export resteront disponibles.|After confirmation, additions, edits and deletions for this month will be blocked for all departments. Viewing and exporting will remain available.|بعد التأكيد، سيُمنع الإضافة والتعديل والحذف لهذا الشهر في جميع الأقسام. تبقى المشاهدة والتصدير متاحين.|确认后，所有部门都无法新增、修改或删除该月份的数据。仍可查看和导出。|Dopo la conferma, aggiunte, modifiche ed eliminazioni del mese saranno bloccate per tutti i reparti. Consultazione ed esportazione resteranno disponibili.
+Clôture en cours…|Closing month…|جارٍ إقفال الشهر…|正在进行月度结账…|Chiusura in corso…
+Exporter et clôturer|Export and close|تصدير وإقفال|导出并结账|Esporta e chiudi
+Bilan mensuel|Monthly report|التقرير الشهري|月度报表|Bilancio mensile
+Identifiant|Identifier|المعرّف|标识|Identificativo
+Heures machine|Machine hours|ساعات الآلة|机器工时|Ore macchina
+Défauts détaillés|Defect breakdown|تفاصيل العيوب|缺陷明细|Dettaglio difetti
+Date de validation|Validation date|تاريخ الاعتماد|验证日期|Data di convalida
+Date de création|Created on|تاريخ الإنشاء|创建日期|Data di creazione
+Détail|Details|التفاصيل|详情|Dettaglio
+Effectif|Headcount|عدد العاملين|人数|Numero di addetti
+Saisissez un effectif entier positif ou nul.|Enter a whole, non-negative headcount.|أدخل عددًا صحيحًا غير سالب للعاملين.|请输入非负整数人数。|Inserisci un numero intero non negativo di addetti.
+Le champ effectif est absent de la base. Exécutez supabase-sorting-headcount.sql dans Supabase, puis réessayez.|The headcount field is missing from the database. Run supabase-sorting-headcount.sql in Supabase, then try again.|حقل عدد العاملين غير موجود في قاعدة البيانات. نفّذ supabase-sorting-headcount.sql في Supabase، ثم أعد المحاولة.|数据库中缺少人数字段。请在 Supabase 中执行 supabase-sorting-headcount.sql，然后重试。|Il campo del numero di addetti manca nel database. Esegui supabase-sorting-headcount.sql in Supabase, poi riprova.
 Annuler|Cancel|Cancel|Cancel|Annulla
 OK supprimer|OK, delete|OK, delete|OK, delete|OK, elimina
 Reference article|Article reference|Article reference|Article reference|Riferimento articolo

@@ -6,6 +6,53 @@
   text-rendering: optimizeLegibility;
 }
 
+.month-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 20px;
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border: 1px solid #d5e0e7;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.month-choice,
+.month-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.month-choice label { display: grid; gap: 6px; color: #526a7b; font-size: .8rem; font-weight: 700; }
+.month-choice input { min-height: 40px; padding: 7px 12px; border: 1px solid #c9d7e1; border-radius: 8px; color: #17364c; background: #fff; }
+.month-toolbar button { min-height: 40px; }
+.month-state { align-self: center; padding: 6px 10px; border-radius: 6px; background: #edf5f0; color: #246647; font-size: .8rem; font-weight: 700; }
+.month-closed { background: #edf1f5; color: #43596d; }
+.month-help,
+.month-warning { flex-basis: 100%; margin: 0; font-size: .8rem; line-height: 1.5; }
+.month-help { color: #526a7b; }
+.month-warning { color: #896018; }
+.month-toolbar .complaint-error { flex-basis: 100%; margin: 0; }
+.month-entry-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.month-entry-fields:disabled { opacity: .65; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+.month-close-window { border-color: #c9d7e1; }
+.confirm-window.month-close-window header { color: #17364c; }
+.month-close-window .month-warning { color: #896018; }
+.month-summary { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 18px 0; }
+.month-summary div { display: grid; gap: 4px; }
+.month-summary dt { color: #526a7b; font-size: .8rem; }
+.month-summary dd { margin: 0; color: #17364c; font-weight: 750; }
+
+@media (max-width: 760px) {
+  .month-actions { width: 100%; }
+  .month-actions button { flex: 1 1 auto; }
+}
+
 * {
   box-sizing: border-box;
 }

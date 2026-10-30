@@ -72,6 +72,7 @@ create table if not exists sorting_hours (
   sorting_date date not null,
   department text not null,
   hours numeric(8,2) not null default 0 check (hours >= 0),
+  headcount integer check (headcount >= 0),
   good_qty integer not null default 0 check (good_qty >= 0),
   scrap_qty integer not null default 0 check (scrap_qty >= 0),
   created_at timestamptz not null default now(),
@@ -79,6 +80,7 @@ create table if not exists sorting_hours (
 );
 
 alter table sorting_hours add column if not exists good_qty integer not null default 0 check (good_qty >= 0);
+alter table sorting_hours add column if not exists headcount integer check (headcount >= 0);
 alter table sorting_hours add column if not exists scrap_qty integer not null default 0 check (scrap_qty >= 0);
 
 alter table machines enable row level security;
@@ -119,3 +121,6 @@ drop policy if exists "anon update sorting hours" on sorting_hours;
 create policy "anon read sorting hours" on sorting_hours for select using (true);
 create policy "anon insert sorting hours" on sorting_hours for insert with check (true);
 create policy "anon update sorting hours" on sorting_hours for update using (true) with check (true);
+
+-- For monthly archives and database-enforced month closing, apply
+-- supabase-monthly-archives.sql after this base schema.

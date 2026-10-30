@@ -9,6 +9,8 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  DefaultLegendContent,
+  LabelList,
   Legend,
   Line,
   ResponsiveContainer,
@@ -24,7 +26,6 @@ import {
   History,
   Printer,
   RefreshCcw,
-  Search,
   Wrench,
   Settings,
   Trash2,
@@ -41,6 +42,9 @@ import './styles.css';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
 import LiveClock from './LiveClock.jsx';
 import { languages, languageStorageKey, readLanguage, createTranslator } from './i18n.js';
+import { scrapTargetsByDepartment, scrapRateColors, scrapRateStatus, scrapRateGradientStops } from './scrapRate.js';
+import { localDateKey, monthBounds, monthDates, rowsForMonth, entryDateForMonth, buildMonthSnapshot, isMonthClosed, assertLocalMonthsOpen, readAllRows } from './monthly.js';
+import { buildMonthlyWorkbook } from './monthlyExport.js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -62,18 +66,6 @@ const defectTypesByDepartment = {
   Injection: ['Bavure', 'Retassure', 'Effet diesel', 'Peau d orange', 'Ligne de soudure', 'Manque matiere', 'Arrachement', 'Givrage', 'Trace d ejecteur', 'Trace d huile', 'Autres']
 };
 
-const scrapTargetsByDepartment = {
-  Injection: 3,
-  Soudure: 0.5,
-  Metallisation: 7,
-  Assemblage: 0.5,
-  Serigraphie: 0.5,
-};
-const scrapRateColors = {
-  over: '#e23d3d',
-  equal: '#d8a80e',
-  under: '#1e9d5b',
-};
 const qualityOnlyMarker = 'SAISIE_QUALITE_SEULE: oui';
 const paperInjectionRows = [
   ['2026-09-09', '202608.085', 6160, 16],
@@ -137,11 +129,7 @@ function toNumber(value) {
 }
 
 function isoDate(date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function localDateKey(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return localDateKey(date);
 }
 
 function startOfWeek(date) {
@@ -206,11 +194,6 @@ function buildQualityNote(articleReference, qualityNote) {
   ].filter(Boolean).join('\n');
 }
 
-function scrapRateStatus(rate, targetRate) {
-  if (Math.abs(rate - targetRate) < 0.05) return 'equal';
-  return rate > targetRate ? 'over' : 'under';
-}
-
 function RateDot({ cx, cy, payload, r = 6 }) {
   if (cx == null || cy == null) return null;
   const status = scrapRateStatus(toNumber(payload?.rate), toNumber(payload?.targetRate));
@@ -238,13 +221,6 @@ function RateTargetLabel({ x, y, payload }) {
 
 function defaultDefect(department) {
   return defectTypesByDepartment[department]?.[0] || 'Autres';
-}
-
-function currentDateRange() {
-  const now = new Date();
-  const to = now.toISOString().slice(0, 10);
-  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  return { from, to };
 }
 
 function validateProduction(row) {
@@ -309,17 +285,20 @@ function cleanDbRow(row) {
 
 async function loadTable(name, fallback) {
   if (!supabase) return localRead(name, fallback);
-  const { data, error } = await supabase.from(name).select('*').order('created_at', { ascending: false });
-  if (error) {
-    console.warn(error);
-    return localRead(name, fallback);
-  }
-  return data?.length ? data : fallback;
+  return readAllRows(supabase, name);
+}
+
+function guardLocalRows(name, rows) {
+  const dateKey = { production_entries: 'production_date', sorting_hours: 'sorting_date', customer_complaints: 'complaint_date', mod_assignments: 'shift_date' }[name];
+  if (!dateKey) return;
+  const existing = localRead(name, []);
+  assertLocalMonthsOpen(localRead('monthly_closures', []), rows.flatMap((row) => [row[dateKey], existing.find((item) => item.id === row.id)?.[dateKey]]));
 }
 
 async function insertRows(name, rows) {
   if (!rows.length) return rows;
   if (!supabase) {
+    guardLocalRows(name, rows);
     const existing = localRead(name, []);
     const localRows = rows.map((row) => ({ ...row, id: row.id || `local-${Date.now()}-${Math.random().toString(36).slice(2)}` }));
     const key = name === 'machines' ? 'code' : name === 'product_references' ? 'reference' : null;
@@ -344,6 +323,7 @@ async function saveRows(name, rows) {
     return clean;
   });
   if (!supabase) {
+    guardLocalRows(name, dbRows);
     const existing = localRead(name, []);
     const key = name === 'machines' ? 'code' : name === 'product_references' ? 'reference' : null;
     const savedRows = dbRows.map((row) => ({ ...row, id: row.id || `local-${Date.now()}-${Math.random().toString(36).slice(2)}` }));
@@ -402,6 +382,7 @@ async function deleteRow(name, row) {
     if (error) throw error;
     return;
   }
+  guardLocalRows(name, [row]);
   const existing = localRead(name, []);
   localWrite(name, existing.filter((item) => item.id !== row.id));
 }
@@ -412,6 +393,38 @@ function App() {
   const t = useMemo(() => createTranslator(language), [language]);
   const locale = languages.find(({ code }) => code === language).locale;
   const formatDate = (value) => new Date(value + 'T12:00:00').toLocaleDateString(locale);
+  const [today, setToday] = useState(() => localDateKey());
+  const currentMonth = today.slice(0, 7);
+  const [monthOverride, setMonthOverride] = useState(null);
+  const selectedMonth = monthOverride || currentMonth;
+  const selectedBounds = useMemo(() => monthBounds(selectedMonth), [selectedMonth]);
+  const selectedDates = useMemo(() => monthDates(selectedMonth), [selectedMonth]);
+  const monthLabel = new Date(`${selectedMonth}-01T12:00:00`).toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+  const defaultEntryDate = entryDateForMonth(selectedMonth, today);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError] = useState('');
+  const [extraDataReady, setExtraDataReady] = useState({ complaints: false, sorting: false });
+  const [reloadCount, setReloadCount] = useState(0);
+  const [closures, setClosures] = useState([]);
+  const [closureState, setClosureState] = useState('loading');
+  const [closureError, setClosureError] = useState('');
+  const [closingMonth, setClosingMonth] = useState(false);
+  const [showCloseMonth, setShowCloseMonth] = useState(false);
+  const [monthExportError, setMonthExportError] = useState('');
+  const selectedClosure = closures.find((closure) => closure.month.slice(0, 7) === selectedMonth);
+  const monthLocked = Boolean(selectedClosure) || closingMonth || dataLoading || Boolean(dataError) || ['loading', 'error'].includes(closureState);
+
+  useEffect(() => {
+    const refreshDay = () => setToday(localDateKey());
+    const timer = window.setInterval(refreshDay, 30000);
+    window.addEventListener('focus', refreshDay);
+    document.addEventListener('visibilitychange', refreshDay);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshDay);
+      document.removeEventListener('visibilitychange', refreshDay);
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -421,7 +434,7 @@ function App() {
   }, [language, t]);
 
   const [activeDept, setActiveDept] = useState('Injection');
-  const [entries, setEntries] = useState(seedEntries);
+  const [entries, setEntries] = useState([]);
   const [machines, setMachines] = useState(seedMachines);
   const [references, setReferences] = useState(seedReferences);
   const [assignments, setAssignments] = useState(seedAssignments);
@@ -430,6 +443,7 @@ function App() {
   const [sortingModalDate, setSortingModalDate] = useState('');
   const [sortingDepartment, setSortingDepartment] = useState('Injection');
   const [sortingHoursValue, setSortingHoursValue] = useState('');
+  const [sortingHeadcountValue, setSortingHeadcountValue] = useState('');
   const [sortingGoodQtyValue, setSortingGoodQtyValue] = useState('');
   const [sortingScrapQtyValue, setSortingScrapQtyValue] = useState('');
   const [sortingSaving, setSortingSaving] = useState(false);
@@ -453,10 +467,10 @@ function App() {
   const [showAllProduction, setShowAllProduction] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [serviceMode, setServiceMode] = useState('production');
-  const [filters, setFilters] = useState({ ...currentDateRange(), machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
+  const [filters, setFilters] = useState({ ...selectedBounds, machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
   const [form, setForm] = useState({
     id: '',
-    production_date: new Date().toISOString().slice(0, 10),
+    production_date: defaultEntryDate,
     department: 'Injection',
     machine_code: '',
     product_reference: '',
@@ -478,53 +492,112 @@ function App() {
   });
 
   useEffect(() => {
+    let cancelled = false;
+    setDataLoading(true);
+    setDataError('');
     Promise.all([
       loadTable('production_entries', seedEntries),
       loadTable('machines', seedMachines),
       loadTable('product_references', seedReferences),
       loadTable('mod_assignments', seedAssignments)
     ]).then(([production, machineRows, referenceRows, modRows]) => {
+      if (cancelled) return;
       setEntries(production);
       setMachines(mergeUnique(machineRows, seedMachines, 'code'));
       setReferences(mergeUnique(referenceRows, seedReferences, 'reference'));
       setAssignments(modRows);
+    }).catch((error) => {
+      if (!cancelled) setDataError(error.message || 'Chargement impossible');
+    }).finally(() => {
+      if (!cancelled) setDataLoading(false);
     });
-  }, []);
+    return () => { cancelled = true; };
+  }, [selectedMonth, reloadCount]);
 
   useEffect(() => {
-    if (!supabase) return;
-    supabase.from('customer_complaints').select('*').order('complaint_date', { ascending: true }).then(({ data, error }) => {
-      if (error) {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const data = supabase
+          ? await readAllRows(supabase, 'monthly_closures', { columns: 'month,closed_at', orderBy: 'month', stableKey: 'month' })
+          : localRead('monthly_closures', []);
+        if (!cancelled) { setClosures(data); setClosureState('ready'); setClosureError(''); }
+      } catch (error) {
+        if (!cancelled) {
+          setClosureState(['PGRST205', '42P01'].includes(error.code) ? 'missing' : 'error');
+          setClosureError(error.message || 'Chargement impossible');
+        }
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60000);
+    window.addEventListener('focus', refresh);
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [selectedMonth, reloadCount]);
+
+  useEffect(() => {
+    setFilters({ ...monthBounds(selectedMonth), machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
+    setForm(emptyForm());
+    setDefectParetoDate(entryDateForMonth(selectedMonth, today));
+    setComplaintChartDate('');
+    setSortingChartDate('');
+    setComplaintModalDate('');
+    setSortingModalDate('');
+    setDeleteCandidate(null);
+    setComplaintDeleteCandidate(null);
+    setShowAllIncomplete(false);
+    setShowAllProduction(false);
+    setShowCloseMonth(false);
+    setMonthExportError('');
+  }, [selectedMonth]);
+
+  useEffect(() => {
+    if (!supabase) { setExtraDataReady((state) => ({ ...state, complaints: true })); return; }
+    let cancelled = false;
+    setExtraDataReady((state) => ({ ...state, complaints: false }));
+    readAllRows(supabase, 'customer_complaints', { orderBy: 'complaint_date' }).then((data) => {
+      if (!cancelled) { setCustomerComplaints(data.map((row) => ({ id: row.id, date: row.complaint_date, details: row.details }))); setComplaintError(''); setExtraDataReady((state) => ({ ...state, complaints: true })); }
+    }).catch((error) => {
+      if (!cancelled) {
         const missingTable = ['PGRST205', '42P01'].includes(error.code);
         setComplaintError(missingTable
           ? 'Table customer_complaints absente : exécutez supabase-customer-complaints.sql dans le SQL Editor Supabase, puis rechargez.'
           : 'Connexion Supabase impossible pour les réclamations. Vérifiez les paramètres réseau et les règles d’accès.');
-        return;
       }
-      setCustomerComplaints((data || []).map((row) => ({ id: row.id, date: row.complaint_date, details: row.details })));
     });
-  }, []);
+    return () => { cancelled = true; };
+  }, [selectedMonth, reloadCount]);
 
   useEffect(() => {
-    if (!supabase) return;
-    supabase.from('sorting_hours').select('*').order('sorting_date', { ascending: true }).then(({ data, error }) => {
-      if (error) {
-        setSortingError('Table sorting_hours absente : exécutez supabase-sorting-hours.sql dans le SQL Editor Supabase.');
-        return;
-      }
+    if (!supabase) { setExtraDataReady((state) => ({ ...state, sorting: true })); return; }
+    let cancelled = false;
+    setExtraDataReady((state) => ({ ...state, sorting: false }));
+    readAllRows(supabase, 'sorting_hours', { orderBy: 'sorting_date' }).then((data) => {
+      if (cancelled) return;
       setSortingHours((data || []).map((row) => ({
         id: row.id,
         date: row.sorting_date,
         department: row.department,
         hours: toNumber(row.hours),
+        headcount: row.headcount ?? null,
         goodQty: toNumber(row.good_qty),
         scrapQty: toNumber(row.scrap_qty),
       })));
+      setSortingError('');
+      setExtraDataReady((state) => ({ ...state, sorting: true }));
+    }).catch((error) => {
+      if (!cancelled) setSortingError(error.message || 'Chargement impossible');
     });
-  }, []);
+    return () => { cancelled = true; };
+  }, [selectedMonth, reloadCount]);
+
+  const monthEntries = useMemo(() => rowsForMonth(entries, selectedMonth), [entries, selectedMonth]);
+  const monthComplaints = useMemo(() => rowsForMonth(customerComplaints, selectedMonth, 'date'), [customerComplaints, selectedMonth]);
+  const monthSortingHours = useMemo(() => rowsForMonth(sortingHours, selectedMonth, 'date'), [sortingHours, selectedMonth]);
+  const archiveReady = !dataLoading && !dataError && extraDataReady.complaints && extraDataReady.sorting;
 
   const filtered = useMemo(() => {
-    return entries.filter((item) => {
+    return monthEntries.filter((item) => {
       const inDate = item.production_date >= filters.from && item.production_date <= filters.to;
       const inDept = item.department === activeDept;
       const inMachine = filters.machine === 'Tous' || item.machine_code === filters.machine;
@@ -532,7 +605,7 @@ function App() {
       const inOf = filters.workOrder === 'Tous' || item.work_order === filters.workOrder;
       return inDate && inDept && inMachine && inRef && inOf;
     });
-  }, [entries, filters, activeDept]);
+  }, [monthEntries, filters, activeDept]);
   const visibleProductionRows = useMemo(() => {
     const latestFirst = [...filtered].sort((a, b) => String(b.production_date || '').localeCompare(String(a.production_date || ''))
       || String(b.created_at || '').localeCompare(String(a.created_at || '')));
@@ -542,49 +615,39 @@ function App() {
   const departmentData = useMemo(() => {
     const dept = departments.find((item) => item.key === activeDept);
     if (!dept) return [];
-    const rows = entries.filter((entry) => entry.department === dept.key);
+    const rows = monthEntries.filter((entry) => entry.department === dept.key);
     const production = rows.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
     const scrap = rows.reduce((sum, row) => sum + toNumber(row.scrap_qty), 0);
     const rate = production + scrap ? Number(((scrap / (production + scrap)) * 100).toFixed(1)) : 0;
     return [{ key: dept.key, name: t(dept.key), production, scrap, rate, targetRate: scrapTargetsByDepartment[dept.key] ?? 0 }];
-  }, [entries, activeDept, t]);
+  }, [monthEntries, activeDept, t]);
 
   const customerComplaintData = useMemo(() => {
-    const rows = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
-      const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-      rows.push({ date, complaints: customerComplaints.some((complaint) => complaint.date === date) ? 1 : 0 });
-    }
-    return rows;
-  }, [customerComplaints]);
+    return selectedDates.map((date) => ({ date, complaints: monthComplaints.some((complaint) => complaint.date === date) ? 1 : 0 }));
+  }, [monthComplaints, selectedDates]);
 
   const sortingHoursData = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const rows = [];
-    for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
-      const date = localDateKey(day);
+    for (const date of selectedDates) {
       const row = { date };
       departments.forEach(({ key }) => {
-        const departmentRows = sortingHours.filter((item) => item.date === date && item.department === key);
+        const departmentRows = monthSortingHours.filter((item) => item.date === date && item.department === key);
         row[key] = departmentRows.reduce((sum, item) => sum + toNumber(item.hours), 0);
+        row[`${key}Headcount`] = departmentRows.length && departmentRows.every((item) => item.headcount != null)
+          ? departmentRows.reduce((sum, item) => sum + item.headcount, 0)
+          : null;
         row[`${key}GoodQty`] = departmentRows.reduce((sum, item) => sum + toNumber(item.goodQty), 0);
         row[`${key}ScrapQty`] = departmentRows.reduce((sum, item) => sum + toNumber(item.scrapQty), 0);
       });
       rows.push(row);
     }
     return rows;
-  }, [sortingHours]);
+  }, [monthSortingHours, selectedDates]);
 
   const departmentTargetTrend = useMemo(() => {
     const targetRate = scrapTargetsByDepartment[activeDept] ?? 0;
     const perDay = new Map();
-    const departmentEntries = entries.filter((entry) => entry.department === activeDept && entry.production_date);
+    const departmentEntries = monthEntries.filter((entry) => entry.department === activeDept);
     departmentEntries.forEach((entry) => {
       const totals = perDay.get(entry.production_date) || { good: 0, scrap: 0 };
       totals.good += toNumber(entry.good_qty);
@@ -592,16 +655,7 @@ function App() {
       perDay.set(entry.production_date, totals);
     });
     const rows = [];
-    const baselineStart = new Date(2026, 9, 1);
-    const earliestEntryDate = departmentEntries.reduce((earliest, entry) => {
-      const date = new Date(`${entry.production_date}T00:00:00`);
-      return date < earliest ? date : earliest;
-    }, baselineStart);
-    const start = new Date(earliestEntryDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
-      const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    for (const date of selectedDates) {
       const totals = perDay.get(date);
       const hasProduction = Boolean(totals && totals.good + totals.scrap > 0);
       const rate = hasProduction
@@ -610,11 +664,17 @@ function App() {
       rows.push({ date, rate, targetRate, hasProduction });
     }
     return rows;
-  }, [entries, activeDept]);
+  }, [monthEntries, activeDept, selectedDates]);
   const hasSelectedDepartmentProduction = departmentTargetTrend.some((row) => row.hasProduction);
+  const targetRate = scrapTargetsByDepartment[activeDept] ?? 0;
+  const rateStrokeStops = useMemo(() => scrapRateGradientStops(departmentTargetTrend.map((row) => row.rate), targetRate), [departmentTargetTrend, targetRate]);
+  const rateStroke = rateStrokeStops.length
+    ? 'url(#scrap-rate-stroke)'
+    : scrapRateColors[scrapRateStatus(departmentTargetTrend[0]?.rate ?? 0, targetRate)];
 
   function openCustomerComplaintForm(date = complaintChartDate) {
     if (!date) return;
+    try { assertMonthWritable(date); } catch (error) { setComplaintError(error.message); return; }
     setComplaintModalDate(date);
     setComplaintDraft('');
     setComplaintError('');
@@ -622,6 +682,7 @@ function App() {
 
   async function saveCustomerComplaint(event) {
     event.preventDefault();
+    try { assertMonthWritable(complaintModalDate); } catch (error) { setComplaintError(error.message); return; }
     if (!supabase) {
       setComplaintError('Enregistrement en ligne indisponible : configurez Supabase pour enregistrer les réclamations.');
       return;
@@ -648,10 +709,13 @@ function App() {
 
   function openSortingHoursForm(date = sortingChartDate) {
     if (!date) return;
+    if (!extraDataReady.sorting) { setSortingError(t('Attendez la fin du chargement ou actualisez les données.')); return; }
+    try { assertMonthWritable(date); } catch (error) { setSortingError(error.message); return; }
     const existing = sortingHours.find((item) => item.date === date && item.department === activeDept);
     setSortingModalDate(date);
     setSortingDepartment(activeDept);
     setSortingHoursValue(existing ? String(existing.hours) : '');
+    setSortingHeadcountValue(existing?.headcount != null ? String(existing.headcount) : '');
     setSortingGoodQtyValue(existing ? String(existing.goodQty) : '');
     setSortingScrapQtyValue(existing ? String(existing.scrapQty) : '');
     setSortingError('');
@@ -659,8 +723,14 @@ function App() {
 
   async function saveSortingHours(event) {
     event.preventDefault();
+    try { assertMonthWritable(sortingModalDate); } catch (error) { setSortingError(error.message); return; }
     if (!supabase) {
       setSortingError('Configurez Supabase pour enregistrer les heures de tri en ligne.');
+      return;
+    }
+    const headcount = Number(sortingHeadcountValue);
+    if (sortingHeadcountValue.trim() === '' || !Number.isInteger(headcount) || headcount < 0 || headcount > 2147483647) {
+      setSortingError(t('Saisissez un effectif entier positif ou nul.'));
       return;
     }
     setSortingSaving(true);
@@ -669,11 +739,16 @@ function App() {
       sorting_date: sortingModalDate,
       department: sortingDepartment,
       hours: Number(String(sortingHoursValue).replace(',', '.')),
+      headcount,
       good_qty: Number(sortingGoodQtyValue),
       scrap_qty: Number(sortingScrapQtyValue),
     }, { onConflict: 'sorting_date,department' }).select().single();
     setSortingSaving(false);
     if (error) {
+      if (['42703', 'PGRST204'].includes(error.code) && String(error.message).includes('headcount')) {
+        setSortingError(t('Le champ effectif est absent de la base. Exécutez supabase-sorting-headcount.sql dans Supabase, puis réessayez.'));
+        return;
+      }
       setSortingError(`Enregistrement impossible. Vérifiez la migration supabase-sorting-hours.sql dans le SQL Editor Supabase. Détail : ${error.message}`);
       return;
     }
@@ -684,6 +759,7 @@ function App() {
         date: data.sorting_date,
         department: data.department,
         hours: toNumber(data.hours),
+        headcount: data.headcount ?? null,
         goodQty: toNumber(data.good_qty),
         scrapQty: toNumber(data.scrap_qty),
       },
@@ -692,6 +768,7 @@ function App() {
   }
 
   async function deleteCustomerComplaint(complaint) {
+    try { assertMonthWritable(complaint.date); } catch (error) { setComplaintError(error.message); setComplaintDeleteCandidate(null); return; }
     const { error } = await supabase.from('customer_complaints').delete().eq('id', complaint.id);
     if (error) {
       setComplaintError('Suppression impossible. Vérifiez la règle de suppression Supabase.');
@@ -703,7 +780,7 @@ function App() {
   }
 
   const factoryEvaluationData = useMemo(() => {
-    const now = new Date();
+    const now = new Date(`${selectedMonth === currentMonth ? today : selectedBounds.to}T12:00:00`);
     const scoreBucket = (bucket) => {
       const rows = entries.filter((entry) => entry.department === activeDept && entry.production_date >= bucket.from && entry.production_date <= bucket.to);
       const good = rows.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
@@ -736,10 +813,10 @@ function App() {
       buckets.push(scoreBucket({ axisKey: `day-${index}`, label: day.toLocaleDateString(locale, { weekday: 'short' }), section: 'week', from: isoDate(day), to: isoDate(day) }));
     }
     return buckets;
-  }, [entries, activeDept, locale]);
+  }, [entries, activeDept, locale, selectedMonth, currentMonth, today, selectedBounds.to]);
 
   const defectPareto = useMemo(() => {
-    const departmentRows = entries.filter((row) => row.department === activeDept && row.production_date);
+    const departmentRows = monthEntries.filter((row) => row.department === activeDept);
     const defectsByDate = new Map();
     const rejectedQuantity = (row) => {
       const recordedScrap = Math.max(0, toNumber(row.scrap_qty));
@@ -769,41 +846,27 @@ function App() {
     departmentRows.forEach((row) => {
       defectsByDate.set(row.production_date, (defectsByDate.get(row.production_date) || 0) + rejectedQuantity(row));
     });
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const start = departmentRows.reduce((earliest, row) => {
-      const date = new Date(`${row.production_date}T00:00:00`);
-      return date < earliest ? date : earliest;
-    }, monthStart);
-    const data = [];
-    for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
-      const date = localDateKey(day);
-      data.push({ date, total: defectsByDate.get(date) || 0 });
-    }
+    const data = selectedDates.map((date) => ({ date, total: defectsByDate.get(date) || 0 }));
     return { data };
-  }, [entries, activeDept, defectParetoMode, defectParetoDate]);
+  }, [monthEntries, activeDept, defectParetoMode, defectParetoDate, selectedDates]);
 
   const machinesForDept = machines.filter((machine) => machine.department === form.department || !machine.department);
   const referencesForDept = references.filter((ref) => ref.family === form.department || !ref.family);
   const articleReferences = useMemo(() => {
-    return [...new Set(entries.map((row) => row.product_reference).filter(Boolean))].sort();
-  }, [entries]);
+    return [...new Set(monthEntries.map((row) => row.product_reference).filter(Boolean))].sort();
+  }, [monthEntries]);
   const defectTypes = defectTypesByDepartment[form.department] || ['Autres'];
-  const incompleteEntries = useMemo(() => entries.filter((row) => {
-    const productionMissing = validateProduction(row);
-    const qualityMissing = validateQuality(row);
-    const computedStatus = row.entry_status || (productionMissing.length || qualityMissing.length ? 'A completer' : 'Complete');
-    return computedStatus !== 'Complete' || productionMissing.length > 0 || qualityMissing.length > 0;
+  const incompleteEntries = useMemo(() => monthEntries.filter((row) => {
+    return row.entry_status && row.entry_status !== 'Complete' || completionStatus(row).status !== 'Complete';
   }).sort((a, b) => String(b.production_date || '').localeCompare(String(a.production_date || ''))
-    || String(b.created_at || '').localeCompare(String(a.created_at || ''))), [entries]);
+    || String(b.created_at || '').localeCompare(String(a.created_at || ''))), [monthEntries]);
   const visibleIncompleteEntries = showAllIncomplete ? incompleteEntries : incompleteEntries.slice(0, 3);
 
   const qualityQueue = useMemo(() => incompleteEntries.filter((row) => validateProduction(row).length === 0), [incompleteEntries]);
 
   const assignmentRows = useMemo(() => {
     const map = new Map();
-    entries.forEach((row) => {
+    monthEntries.forEach((row) => {
       if (!row.machine_code || !row.operator_names) return;
       const previous = map.get(row.machine_code);
       map.set(row.machine_code, {
@@ -813,8 +876,8 @@ function App() {
         mod_hours: (previous?.mod_hours || 0) + toNumber(row.mod_hours)
       });
     });
-    return [...assignments, ...map.values()];
-  }, [entries, assignments]);
+    return [...rowsForMonth(assignments, selectedMonth, 'shift_date'), ...map.values()];
+  }, [monthEntries, assignments, selectedMonth]);
 
   function selectDepartment(department) {
     setActiveDept(department);
@@ -826,10 +889,21 @@ function App() {
     });
   }
 
+  function assertMonthWritable(date, originalDate = date) {
+    if (monthLocked || isMonthClosed(closures, originalDate) || isMonthClosed(closures, date)) {
+      throw new Error(t(selectedClosure || isMonthClosed(closures, originalDate) || isMonthClosed(closures, date)
+        ? 'Mois clôturé : les données sont en lecture seule.'
+        : 'Attendez la fin du chargement ou actualisez les données.'));
+    }
+    if (!String(date).startsWith(`${selectedMonth}-`)) {
+      throw new Error(t('La date doit appartenir au mois affiché.'));
+    }
+  }
+
   function emptyForm(overrides = {}) {
     return {
       id: '',
-      production_date: new Date().toISOString().slice(0, 10),
+      production_date: defaultEntryDate,
       department: activeDept,
       machine_code: '',
       product_reference: '',
@@ -853,6 +927,7 @@ function App() {
   }
 
   function editProduction(row, targetService) {
+    try { assertMonthWritable(row.production_date); } catch (error) { setStatus({ key: error.message, error: true }); return; }
     setActiveDept(row.department);
     setServiceMode(targetService || (validateProduction(row).length ? 'production' : 'quality'));
     setForm(emptyForm({
@@ -889,6 +964,7 @@ function App() {
   async function saveProductionService(event) {
     event.preventDefault();
     try {
+      assertMonthWritable(form.production_date, entries.find((row) => row.id === form.id)?.production_date);
       const row = {
         ...form,
         id: form.id || undefined,
@@ -932,6 +1008,7 @@ function App() {
       return;
     }
     try {
+      assertMonthWritable(form.production_date, entries.find((row) => row.id === form.id)?.production_date);
       const row = {
         ...form,
         id: form.id || undefined,
@@ -978,6 +1055,7 @@ function App() {
   async function addProduction(event, forceComplete = false) {
     event.preventDefault();
     try {
+      assertMonthWritable(form.production_date, entries.find((row) => row.id === form.id)?.production_date);
       const row = {
         ...form,
         id: form.id || undefined,
@@ -1017,6 +1095,7 @@ function App() {
 
   async function confirmDeleteProduction(row) {
     try {
+      assertMonthWritable(row.production_date);
       await deleteRow('production_entries', row);
       setEntries((current) => current.filter((item) => item !== row && item.id !== row.id));
       setDeleteCandidate(null);
@@ -1026,40 +1105,70 @@ function App() {
     }
   }
 
-  function exportExcel() {
-    if (!entries.length) {
-      setStatus({ key: 'Aucune donnee a exporter', error: true });
-      return;
-    }
-    const rows = entries.map((row) => {
-      const missing = Array.isArray(row.missing_fields) ? row.missing_fields : completionStatus(row).missingFields;
-      return {
-        [t("Etat")]: t(row.entry_status || 'Complete'),
-        [t("Date")]: formatDate(row.production_date),
-        [t("Departement")]: t(row.department),
-        [t("Machine / Poste")]: row.machine_code || '',
-        [t("Reference machine")]: row.product_reference || '',
-        [t("Reference article")]: extractArticleReference(row.note),
-        [t("OF / Bon")]: row.work_order || '',
-        [t("Qte bonne")]: toNumber(row.good_qty),
-        [t("Qte rebut")]: toNumber(row.scrap_qty),
-        [t("Rebut justifie")]: toNumber(row.justified_scrap_qty),
-        [t("Purge kg")]: toNumber(row.purge_kg),
-        [t("Pareto defaut")]: row.defect_type ? t(row.defect_type) : '',
-        [t("Heure travail")]: toNumber(row.work_hours ?? row.machine_hours),
-        [t("MOD")]: toNumber(row.mod_count),
-        [t("Nom MOD")]: row.operator_names || '',
-        [t("Total H MOD")]: toNumber(row.mod_hours),
-        [t("Champs manquants")]: missing.map((field) => t(field)).join(', '),
-      };
+  function currentMonthSnapshot() {
+    return buildMonthSnapshot(selectedMonth, {
+      production: entries,
+      sorting: sortingHours.map(({ date, goodQty, scrapQty, ...row }) => ({ ...row, sorting_date: date, good_qty: goodQty, scrap_qty: scrapQty })),
+      complaints: customerComplaints.map(({ date, ...row }) => ({ ...row, complaint_date: date })),
+      assignments,
     });
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    worksheet['!cols'] = Object.keys(rows[0]).map((header) => ({ wch: Math.max(14, Math.min(28, header.length + 4)) }));
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, t("Production").slice(0, 31));
-    const today = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(workbook, `production_tous_departements_${today}.xlsx`);
-    setStatus({ key: '{count} ligne(s) exportee(s) vers Excel', count: rows.length });
+  }
+
+  function downloadMonthArchive(snapshot, closedAt = null) {
+    XLSX.writeFile(buildMonthlyWorkbook(snapshot, { month: selectedMonth, closedAt, t }), `bilan_${selectedMonth}.xlsx`);
+  }
+
+  async function exportExcel() {
+    setMonthExportError('');
+    try {
+      if (selectedClosure) {
+        let archive;
+        if (supabase) {
+          const { data, error } = await supabase.from('monthly_closures').select('snapshot,closed_at').eq('month', selectedClosure.month).single();
+          if (error) throw error;
+          archive = data;
+        } else {
+          archive = localRead('monthly_closures', []).find((row) => row.month === selectedClosure.month);
+        }
+        if (!archive?.snapshot) throw new Error(t('Archive indisponible. Actualisez les données.'));
+        downloadMonthArchive(archive.snapshot, archive.closed_at);
+      } else {
+        if (!archiveReady) throw new Error(t('Attendez la fin du chargement ou actualisez les données.'));
+        downloadMonthArchive(currentMonthSnapshot());
+      }
+    } catch (error) {
+      setMonthExportError(error.message);
+    }
+  }
+
+  async function closeSelectedMonth() {
+    setMonthExportError('');
+    if (selectedMonth >= currentMonth || !archiveReady || closureState !== 'ready' || selectedClosure || closingMonth) return;
+    setClosingMonth(true);
+    let closed = false;
+    try {
+      let archive;
+      if (supabase) {
+        const { data, error } = await supabase.rpc('close_production_month', { p_month: selectedBounds.from });
+        if (error) throw error;
+        archive = Array.isArray(data) ? data[0] : data;
+      } else {
+        const existing = localRead('monthly_closures', []);
+        archive = existing.find((row) => row.month === selectedBounds.from)
+          || { month: selectedBounds.from, closed_at: new Date().toISOString(), snapshot: currentMonthSnapshot() };
+        localWrite('monthly_closures', [...existing.filter((row) => row.month !== archive.month), archive]);
+      }
+      if (!archive?.snapshot) throw new Error(t('Archive indisponible. Actualisez les données.'));
+      closed = true;
+      setClosures((rows) => [...rows.filter((row) => row.month !== archive.month), { month: archive.month, closed_at: archive.closed_at }]);
+      setShowCloseMonth(false);
+      setReloadCount((count) => count + 1);
+      downloadMonthArchive(archive.snapshot, archive.closed_at);
+    } catch (error) {
+      setMonthExportError(`${closed ? `${t('Mois clôturé. Vous pouvez réessayer l’export Excel.')} ` : ''}${error.message}`);
+    } finally {
+      setClosingMonth(false);
+    }
   }
 
   async function importExcel(event, kind) {
@@ -1098,12 +1207,8 @@ function App() {
     event.target.value = '';
   }
 
-  function resetDemo() {
-    setEntries(seedEntries);
-    setMachines(seedMachines);
-    setReferences(seedReferences);
-    setAssignments(seedAssignments);
-    setStatus({ key: 'Donnees videes: pret pour import Excel et saisie' });
+  function resetFilters() {
+    setFilters({ ...selectedBounds, machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
   }
 
   return (
@@ -1124,15 +1229,37 @@ function App() {
         </div>
       </header>
 
+      <section className="month-toolbar" aria-label={t('Gestion mensuelle')}>
+        <div className="month-choice">
+          <label>{t('Mois affiché')}<input type="month" max={currentMonth} value={selectedMonth} disabled={closingMonth} onChange={(event) => {
+            const month = event.target.value;
+            if (/^\d{4}-(0[1-9]|1[0-2])$/.test(month) && month <= currentMonth) setMonthOverride(month === currentMonth ? null : month);
+          }} /></label>
+          <button type="button" disabled={closingMonth} onClick={() => setMonthOverride(null)}>{t('Mois actuel')}</button>
+          <span className={selectedClosure ? 'month-state month-closed' : 'month-state'}>{t(selectedClosure ? 'Mois clôturé · lecture seule' : 'Mois ouvert')}</span>
+        </div>
+        <div className="month-actions">
+          <button type="button" disabled={dataLoading || closingMonth} onClick={() => setReloadCount((count) => count + 1)}><RefreshCcw size={16} />{t('Actualiser')}</button>
+          <button className="export-button" type="button" disabled={closingMonth || (!selectedClosure && !archiveReady)} onClick={() => exportExcel()}><FileDown size={16} />{t('Exporter le mois')}</button>
+          <button className="primary" type="button" disabled={closingMonth || Boolean(selectedClosure) || selectedMonth >= currentMonth || !archiveReady || closureState !== 'ready'} onClick={() => { setMonthExportError(''); setShowCloseMonth(true); }}>{t('Clôturer le mois')}</button>
+        </div>
+        <p className="month-help">{t('Le mois courant s’ouvre automatiquement. Les mois précédents restent conservés.')}</p>
+        {selectedClosure && <p className="month-help">{t('Clôturé le')}: {new Date(selectedClosure.closed_at).toLocaleString(locale)}</p>}
+        {!supabase && <p className="month-help">{t('Mode local : les données et clôtures sont conservées dans ce navigateur. Exportez le bilan pour en garder une copie.')}</p>}
+        {closureState === 'missing' && <p className="month-warning">{t('Clôture à activer : exécutez supabase-monthly-archives.sql dans Supabase.')}</p>}
+        {closureState === 'error' && <p className="complaint-error" role="alert">{t('Impossible de vérifier les clôtures. Actualisez avant de modifier les données.')} {closureError}</p>}
+        {dataLoading && <p className="month-help" role="status">{t('Chargement des données…')}</p>}
+        {dataError && <p className="complaint-error" role="alert">{t('Chargement impossible. Aucune donnée de démonstration ne remplace vos données.')} {dataError}</p>}
+        {monthExportError && <p className="complaint-error" role="alert">{monthExportError}</p>}
+      </section>
+
       <section className="filters">
-        <label>{t("Date debut")}<input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></label>
-        <label>{t("Date fin")}<input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></label>
+        <label>{t("Date debut")}<input type="date" min={selectedBounds.from} max={filters.to || selectedBounds.to} value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></label>
+        <label>{t("Date fin")}<input type="date" min={filters.from || selectedBounds.from} max={selectedBounds.to} value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></label>
         <label>{t("Machine / Poste")}<select value={filters.machine} onChange={(e) => setFilters({ ...filters, machine: e.target.value })}><option value="Tous">{t("Tous")}</option>{machines.map((machine) => <option key={machine.id || machine.code} value={machine.code}>{machine.code}</option>)}</select></label>
         <label>{t("Reference machine")}<select value={filters.reference} onChange={(e) => setFilters({ ...filters, reference: e.target.value })}><option value="Tous">{t("Tous")}</option>{articleReferences.map((ref) => <option key={ref} value={ref}>{ref}</option>)}</select></label>
-        <label>{t("OF / Bon")}<select value={filters.workOrder} onChange={(e) => setFilters({ ...filters, workOrder: e.target.value })}><option value="Tous">{t("Tous")}</option>{[...new Set(entries.map((row) => row.work_order).filter(Boolean))].map((of) => <option key={of} value={of}>{of}</option>)}</select></label>
-        <button className="primary" type="button"><Search size={18} />{t("Appliquer")}</button>
-        <button className="export-button" type="button"><FileDown size={18} />{t("Exporter Excel")}</button>
-        <button type="button" onClick={resetDemo}><RefreshCcw size={18} />{t("Reinitialiser")}</button>
+        <label>{t("OF / Bon")}<select value={filters.workOrder} onChange={(e) => setFilters({ ...filters, workOrder: e.target.value })}><option value="Tous">{t("Tous")}</option>{[...new Set(monthEntries.map((row) => row.work_order).filter(Boolean))].map((of) => <option key={of} value={of}>{of}</option>)}</select></label>
+        <button type="button" onClick={resetFilters}><RefreshCcw size={18} />{t('Réinitialiser les filtres')}</button>
       </section>
 
       <section className="dept-tabs">
@@ -1150,9 +1277,11 @@ function App() {
       </section>
 
       <Panel ref={sheetPanelRef} title={serviceMode === 'production' ? t("Saisie service production") : t("Saisie service qualite")} className="sheet-panel">
+        {selectedClosure && <p className="month-help">{t('Mois clôturé : les données sont en lecture seule.')}</p>}
+        <fieldset className="month-entry-fields" disabled={monthLocked}>
         {serviceMode === 'production' ? (
           <form className="sheet-form production-sheet" onSubmit={saveProductionService}>
-            <label>{t("Date")}<input type="date" value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
+            <label>{t("Date")}<input type="date" min={selectedBounds.from} max={selectedBounds.to} required value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
             <label>{t("Departement")}<select value={form.department} onChange={(e) => selectDepartment(e.target.value)}>{departments.map((dept) => <option key={dept.key} value={dept.key}>{t(dept.key)}</option>)}</select></label>
             <label>{t("Machine / Poste")}<select value={form.machine_code} onChange={(e) => handleMachineChange(e.target.value)}><option value="">{t("Choisir machine")}</option>{machinesForDept.map((machine) => <option key={machine.id || machine.code} value={machine.code}>{machine.code} - {t(machine.label)}</option>)}</select></label>
             <label>{t("Reference machine")}<select value={form.product_reference} onChange={(e) => setForm({ ...form, product_reference: e.target.value })}><option value="">{t("Choisir reference")}</option>{referencesForDept.map((ref) => <option key={ref.id || ref.reference} value={ref.reference}>{t(ref.reference)}</option>)}</select></label>
@@ -1175,7 +1304,7 @@ function App() {
               }}><option value="">{t("Choisir ligne production")}</option>{qualityQueue.map((row) => <option key={row.id} value={row.id}>{formatDate(row.production_date)} - {t(row.department)} - {row.machine_code} - {row.work_order}</option>)}</select></label>
               <button type="button" onClick={startQualityEntry}><PlusCircle size={18} />{t("Nouvelle ligne qualite")}</button>
             </div>
-            <label>{t("Date")}<input type="date" value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
+            <label>{t("Date")}<input type="date" min={selectedBounds.from} max={selectedBounds.to} required value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
             <label>{t("Departement")}<select value={form.department} onChange={(e) => { const nextDefect = defaultDefect(e.target.value); setForm({ ...form, department: e.target.value, defect_type: nextDefect, defect_breakdown: [] }); }}>{departments.map((dept) => <option key={dept.key} value={dept.key}>{t(dept.key)}</option>)}</select></label>
             <label>{t("Machine / Poste")}<input placeholder={t("Machine / Poste")} value={form.machine_code || ''} onChange={(e) => setForm({ ...form, machine_code: e.target.value })} /></label>
             <label>{t("Reference machine")}<input placeholder={t("Reference machine")} value={form.product_reference || ''} onChange={(e) => setForm({ ...form, product_reference: e.target.value })} /></label>
@@ -1204,6 +1333,7 @@ function App() {
             </div>
           </form>
         )}
+        </fieldset>
         <div className="import-row">
           <span role="status" aria-live="polite" className={status.error ? 'save-status bad-status' : 'save-status'}>{t(status.key, {
             ...status.values,
@@ -1230,9 +1360,9 @@ function App() {
                   <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code || '-'}</td><td>{row.product_reference || '-'}</td><td>{row.article_reference || extractArticleReference(row.note) || '-'}</td><td>{row.work_order || '-'}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{missing.map((field) => t(field)).join(locale === 'ar' ? '، ' : ', ')}</td>
                   <td>
                     <div className="row-actions">
-                      <button className="compact-action" type="button" onClick={() => editProduction(row, 'production')}><Edit3 size={16} />{t("Prod")}</button>
-                      <button className="compact-action" type="button" onClick={() => editProduction(row, 'quality')}><CheckCircle2 size={16} />{t("Qualite")}</button>
-                      <button className="compact-action danger-button" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} />{t("Supprimer")}</button>
+                      <button className="compact-action" type="button" disabled={monthLocked} onClick={() => editProduction(row, 'production')}><Edit3 size={16} />{t("Prod")}</button>
+                      <button className="compact-action" type="button" disabled={monthLocked} onClick={() => editProduction(row, 'quality')}><CheckCircle2 size={16} />{t("Qualite")}</button>
+                      <button className="compact-action danger-button" type="button" disabled={monthLocked} onClick={() => setDeleteCandidate(row)}><Trash2 size={16} />{t("Supprimer")}</button>
                     </div>
                   </td>
                 </tr>
@@ -1245,7 +1375,7 @@ function App() {
       </Panel>
 
       <section className="grid charts">
-        <Panel title={`Taux de rebut et target — ${t(activeDept)}`} className="span12 target-chart-panel">
+        <Panel title={`Taux de rebut et target — ${t(activeDept)} — ${monthLabel}`} className="span12 target-chart-panel">
           <p className="chart-instruction">Target du département : {scrapTargetsByDepartment[activeDept] ?? 0} %.</p>
           <div className="chart-filter-row">
             <label>{t("Departement")}
@@ -1256,8 +1386,12 @@ function App() {
           </div>
           {!hasSelectedDepartmentProduction && <p className="department-data-notice">Aucune quantité de production ou de rebut saisie pour {t(activeDept)} sur la période affichée. Le taux réel apparaît à 0 %. Choisissez le département correspondant aux lignes saisies.</p>}
           <ResponsiveContainer height={280}>
-            <ComposedChart data={departmentTargetTrend} margin={{ top: 12, right: 18, bottom: 8, left: 8 }}>
-              <CartesianGrid stroke="#dbe5f2" vertical={false} />
+            <ComposedChart data={departmentTargetTrend} margin={{ top: 28, right: 32, bottom: 8, left: 12 }}>
+              <defs>
+                <linearGradient id="scrap-rate-stroke" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+                  {rateStrokeStops.map((stop, index) => <stop key={index} offset={`${stop.offset}%`} stopColor={stop.color} />)}
+                </linearGradient>
+              </defs>
               <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={(value) => new Date(`${value}T12:00:00`).toLocaleDateString(locale, { day: '2-digit', month: 'short' })} />
               <YAxis yAxisId="rate" domain={[0, 'auto']} tickFormatter={(value) => `${value}%`} />
               <Tooltip
@@ -1266,18 +1400,23 @@ function App() {
                 content={({ active, payload, label }) => active && payload?.length ? (
                   <div className="chart-tooltip">
                     <strong>{formatDate(label)}</strong>
-                    {payload.map((item) => <div key={item.dataKey} style={{ color: item.color }}>{item.name}: {item.value}%</div>)}
+                    {payload.map((item) => <div key={item.dataKey} style={{ color: item.dataKey === 'rate' ? scrapRateColors[scrapRateStatus(item.value, targetRate)] : item.color }}>{item.name}: {item.value}%</div>)}
                     {!payload[0]?.payload?.hasProduction && <small>Production non saisie : taux réel affiché à 0 %.</small>}
                   </div>
                 ) : null}
               />
-              <Legend />
-              <Line yAxisId="rate" type="monotone" dataKey="rate" name="Taux de rebut réel" stroke="#287fff" strokeWidth={3} connectNulls={false} dot={{ r: 3 }} activeDot={{ r: 6 }} />
-              <Line yAxisId="rate" type="monotone" dataKey="targetRate" name="Target du département" stroke="#f59e0b" strokeWidth={3} strokeDasharray="7 5" dot={false} activeDot={false} />
+              <Legend content={() => <DefaultLegendContent payload={[
+                { value: 'Target du département', type: 'plainline', color: '#f59e0b' },
+                { value: 'Taux de rebut réel', type: 'plainline', color: '#526a86' },
+              ]} />} />
+              <Line yAxisId="rate" type="linear" dataKey="rate" name="Taux de rebut réel" stroke={rateStroke} strokeWidth={3} connectNulls={false} dot={<RateDot r={3} />} activeDot={<RateDot r={6} />} isAnimationActive={false}>
+                <LabelList dataKey="rate" position="top" offset={10} fill="#062b60" fontSize={10} fontWeight={700} stroke="#fff" strokeWidth={3} paintOrder="stroke" formatter={(value) => `${Number(value).toLocaleString(locale, { maximumFractionDigits: 2 })} %`} />
+              </Line>
+              <Line yAxisId="rate" type="linear" dataKey="targetRate" name="Target du département" stroke="#f59e0b" strokeWidth={3} strokeDasharray="7 5" dot={false} activeDot={false} isAnimationActive={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
-        <Panel title={`Réclamations clients — ${new Date().toLocaleDateString(locale, { month: 'long', year: 'numeric' })}`} className="span12 complaint-chart-panel">
+        <Panel title={`Réclamations clients — ${monthLabel}`} className="span12 complaint-chart-panel">
           <p className="chart-instruction">Du 1er au dernier jour du mois. Chaque point : 1 le jour de la réclamation, 0 sinon. Double-cliquez sur une date pour ajouter une réclamation.</p>
           <ResponsiveContainer height={260}>
             <ComposedChart data={customerComplaintData} onMouseMove={(state) => state?.activeLabel && setComplaintChartDate(state.activeLabel)} onDoubleClick={(state) => openCustomerComplaintForm(state?.activeLabel || complaintChartDate)}>
@@ -1294,16 +1433,16 @@ function App() {
             <table className="complaints-table">
               <thead><tr><th>Date</th><th>Réclamation client</th><th>Action</th></tr></thead>
               <tbody>
-                {customerComplaints.map((complaint) => <tr key={complaint.id}>
+                {monthComplaints.map((complaint) => <tr key={complaint.id}>
                   <td>{formatDate(complaint.date)}</td><td>{complaint.details}</td>
-                  <td><button className="icon-only danger-icon" type="button" aria-label={`Supprimer la réclamation du ${formatDate(complaint.date)}`} onClick={() => setComplaintDeleteCandidate(complaint)}><Trash2 size={16} /></button></td>
+                  <td><button className="icon-only danger-icon" type="button" disabled={monthLocked} aria-label={`Supprimer la réclamation du ${formatDate(complaint.date)}`} onClick={() => setComplaintDeleteCandidate(complaint)}><Trash2 size={16} /></button></td>
                 </tr>)}
-                {!customerComplaints.length && <tr><td colSpan="3" className="empty-row">Aucune réclamation enregistrée.</td></tr>}
+                {!monthComplaints.length && <tr><td colSpan="3" className="empty-row">Aucune réclamation enregistrée.</td></tr>}
               </tbody>
             </table>
           </div>
         </Panel>
-        <Panel title={`Rebuts par jour — ${t(activeDept)}`} className="span12 defect-evolution-panel">
+        <Panel title={`Rebuts par jour — ${t(activeDept)} — ${monthLabel}`} className="span12 defect-evolution-panel">
           <div className="defect-pareto-controls">
             <label>{t("Departement")}
               <select value={activeDept} onChange={(event) => selectDepartment(event.target.value)}>
@@ -1311,7 +1450,7 @@ function App() {
               </select>
             </label>
             <label>Date à analyser
-              <input type="date" value={defectParetoDate} max={localDateKey(new Date())} onChange={(event) => {
+              <input type="date" value={defectParetoDate} min={selectedBounds.from} max={selectedBounds.to} onChange={(event) => {
                 setDefectParetoDate(event.target.value);
                 setDefectParetoMode('j1');
               }} />
@@ -1320,7 +1459,8 @@ function App() {
               <button type="button" className={defectParetoMode === 'j1' ? 'active' : ''} onClick={() => {
                 const yesterday = new Date();
                 yesterday.setDate(yesterday.getDate() - 1);
-                setDefectParetoDate(localDateKey(yesterday));
+                const date = localDateKey(yesterday);
+                setDefectParetoDate(date.startsWith(`${selectedMonth}-`) ? date : defaultEntryDate);
                 setDefectParetoMode('j1');
               }}>J-1</button>
               <button type="button" className={defectParetoMode === 'cumulative' ? 'active' : ''} onClick={() => setDefectParetoMode('cumulative')}>Cumul</button>
@@ -1356,8 +1496,8 @@ function App() {
             </ResponsiveContainer>
           </>}
         </Panel>
-        <Panel title={`Heures de tri par jour — ${new Date().toLocaleDateString(locale, { month: 'long', year: 'numeric' })}`} className="span12 sorting-hours-panel">
-          <p className="chart-instruction">Survolez une barre pour voir les heures, quantités bonnes et rebuts de chaque département. Double-cliquez sur une date pour modifier la saisie.</p>
+        <Panel title={`Heures de tri par jour — ${monthLabel}`} className="span12 sorting-hours-panel">
+          <p className="chart-instruction">Survolez une barre pour voir les heures, l’effectif, les quantités bonnes et les rebuts de chaque département. Double-cliquez sur une date pour modifier la saisie.</p>
           {sortingError && <p className="complaint-error" role="alert">{sortingError}</p>}
           {!supabase && <p className="complaint-error">Supabase n’est pas configuré. Les heures de tri ne seront pas enregistrées localement.</p>}
           <ResponsiveContainer height={320}>
@@ -1368,12 +1508,13 @@ function App() {
               <Tooltip content={({ active, payload, label }) => {
                 const row = payload?.[0]?.payload;
                 if (!active || !row) return null;
-                const visibleDepartments = departments.filter(({ key }) => toNumber(row[key]) || toNumber(row[`${key}GoodQty`]) || toNumber(row[`${key}ScrapQty`]));
+                const visibleDepartments = departments.filter(({ key }) => toNumber(row[key]) || row[`${key}Headcount`] != null || toNumber(row[`${key}GoodQty`]) || toNumber(row[`${key}ScrapQty`]));
                 return <div className="recharts-default-tooltip" style={{ direction: 'ltr', padding: '10px 12px', border: '1px solid #d3dfec', borderRadius: 6, background: '#fff', boxShadow: '0 4px 14px rgba(11, 54, 98, .12)' }}>
                   <p className="recharts-tooltip-label" style={{ margin: '0 0 8px', fontWeight: 700 }}>{formatDate(label)}</p>
                   {visibleDepartments.map(({ key }) => <div key={key} style={{ marginTop: 6 }}>
                     <strong>{t(key)}</strong>
                     <div>{t('Heures de tri')}: {toNumber(row[key]).toLocaleString(locale)} h</div>
+                    <div>{t('Effectif')}: {row[`${key}Headcount`] == null ? t('Non renseigne') : row[`${key}Headcount`].toLocaleString(locale)}</div>
                     <div>{t('Qte bonne après tri')}: {toNumber(row[`${key}GoodQty`]).toLocaleString(locale)}</div>
                     <div>{t('Qte rebut après tri')}: {toNumber(row[`${key}ScrapQty`]).toLocaleString(locale)}</div>
                   </div>)}
@@ -1405,7 +1546,7 @@ function App() {
             {visibleProductionRows.map((row, index) => (
               <tr key={row.id || index}>
                 <td><span className={row.entry_status === 'Complete' ? 'state-pill complete' : 'state-pill'}>{t(row.entry_status || 'Complete')}</span></td><td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.article_reference || extractArticleReference(row.note)}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
-                <td><button aria-label={t("Completer")} className="icon-only" type="button" onClick={() => editProduction(row)}><Edit3 size={16} /></button><button aria-label={t("Supprimer")} className="icon-only danger-icon" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} /></button></td>
+                <td><button aria-label={t("Completer")} className="icon-only" type="button" disabled={monthLocked} onClick={() => editProduction(row)}><Edit3 size={16} /></button><button aria-label={t("Supprimer")} className="icon-only danger-icon" type="button" disabled={monthLocked} onClick={() => setDeleteCandidate(row)}><Trash2 size={16} /></button></td>
               </tr>
             ))}
             {!filtered.length && <tr><td colSpan="17" className="empty-row">{t("Aucune donnee. Choisissez un departement puis ajoutez une ligne de production.")}</td></tr>}
@@ -1419,8 +1560,8 @@ function App() {
           <section className="history-window">
             <header className="history-window-head">
               <div>
-                <h2>{t("Historique complet des ajouts")}</h2>
-                <p>{t('{count} ligne(s) enregistree(s)', { count: entries.length.toLocaleString(locale) })}</p>
+                <h2>{t('Historique du mois')} — {monthLabel}</h2>
+                <p>{t('{count} ligne(s) enregistree(s)', { count: monthEntries.length.toLocaleString(locale) })}</p>
               </div>
               <button className="icon-only" type="button" onClick={() => setShowHistoryWindow(false)} aria-label={t("Fermer historique")}><X size={18} /></button>
             </header>
@@ -1428,15 +1569,36 @@ function App() {
               <table>
                 <thead><tr><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("OF / Bon")}</th><th>{t("Qte bonne")}</th><th>{t("Qte rebut")}</th><th>{t("Rebut justifie")}</th><th>{t("Purge kg")}</th><th>{t("Pareto defaut")}</th><th>{t("Heure travail")}</th><th>{t("MOD")}</th><th>{t("Nom MOD")}</th><th>{t("Total H MOD")}</th><th>{t("Action")}</th></tr></thead>
                 <tbody>
-                  {entries.map((row, index) => (
+                  {monthEntries.map((row, index) => (
                     <tr key={row.id || index}>
                     <td>{formatDate(row.production_date)}</td><td>{t(row.department)}</td><td>{row.machine_code}</td><td>{row.product_reference}</td><td>{row.work_order}</td><td>{toNumber(row.good_qty).toLocaleString(locale)}</td><td>{toNumber(row.scrap_qty).toLocaleString(locale)}</td><td>{toNumber(row.justified_scrap_qty).toLocaleString(locale)}</td><td>{row.purge_kg}</td><td><DefectBreakdown row={row} t={t} locale={locale} /></td><td>{row.work_hours ?? row.machine_hours}</td><td>{row.mod_count}</td><td>{row.operator_names}</td><td>{row.mod_hours}</td>
-                      <td><button className="danger-button compact-danger" type="button" onClick={() => setDeleteCandidate(row)}><Trash2 size={16} />{t("Supprimer")}</button></td>
+                      <td><button className="danger-button compact-danger" type="button" disabled={monthLocked} onClick={() => setDeleteCandidate(row)}><Trash2 size={16} />{t("Supprimer")}</button></td>
                     </tr>
                   ))}
-                  {!entries.length && <tr><td colSpan="15" className="empty-row">{t("Aucun historique pour le moment.")}</td></tr>}
+                  {!monthEntries.length && <tr><td colSpan="15" className="empty-row">{t("Aucun historique pour le moment.")}</td></tr>}
                 </tbody>
               </table>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showCloseMonth && (
+        <div className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="close-month-title">
+          <section className="confirm-window month-close-window">
+            <header><CheckCircle2 size={22} /><h2 id="close-month-title">{t('Confirmer la clôture')} — {monthLabel}</h2></header>
+            <p>{t('Une archive complète sera conservée et le bilan Excel sera téléchargé.')}</p>
+            <dl className="month-summary">
+              <div><dt>{t('Production')}</dt><dd>{monthEntries.length.toLocaleString(locale)}</dd></div>
+              <div><dt>{t('Heures de tri')}</dt><dd>{monthSortingHours.length.toLocaleString(locale)}</dd></div>
+              <div><dt>{t('Réclamations')}</dt><dd>{monthComplaints.length.toLocaleString(locale)}</dd></div>
+            </dl>
+            {!!incompleteEntries.length && <p className="month-warning">{t('{count} saisie(s) à compléter seront conservées dans l’archive.', { count: incompleteEntries.length })}</p>}
+            <p>{t('Après validation, les ajouts, modifications et suppressions de ce mois seront bloqués pour tous les départements. La consultation et l’export resteront disponibles.')}</p>
+            {monthExportError && <p className="complaint-error" role="alert">{monthExportError}</p>}
+            <div className="confirm-actions">
+              <button type="button" disabled={closingMonth} onClick={() => setShowCloseMonth(false)}>{t('Annuler')}</button>
+              <button className="primary" type="button" disabled={closingMonth || !archiveReady || Boolean(selectedClosure) || selectedMonth >= currentMonth} onClick={closeSelectedMonth}>{t(closingMonth ? 'Clôture en cours…' : 'Exporter et clôturer')}</button>
             </div>
           </section>
         </div>
@@ -1446,11 +1608,12 @@ function App() {
         <div className="complaint-modal" role="dialog" aria-modal="true" aria-labelledby="sorting-modal-title">
           <form className="complaint-window" onSubmit={saveSortingHours}>
             <header><h2 id="sorting-modal-title">Heures de tri</h2><button className="icon-only" type="button" onClick={() => setSortingModalDate('')} aria-label="Fermer"><X size={18} /></button></header>
-            <label>Date<input type="date" value={sortingModalDate} onChange={(event) => {
+            <label>Date<input type="date" min={selectedBounds.from} max={selectedBounds.to} value={sortingModalDate} onChange={(event) => {
               const date = event.target.value;
               setSortingModalDate(date);
               const existing = sortingHours.find((item) => item.date === date && item.department === sortingDepartment);
               setSortingHoursValue(existing ? String(existing.hours) : '');
+              setSortingHeadcountValue(existing?.headcount != null ? String(existing.headcount) : '');
               setSortingGoodQtyValue(existing ? String(existing.goodQty) : '');
               setSortingScrapQtyValue(existing ? String(existing.scrapQty) : '');
             }} required /></label>
@@ -1459,14 +1622,16 @@ function App() {
               setSortingDepartment(department);
               const existing = sortingHours.find((item) => item.date === sortingModalDate && item.department === department);
               setSortingHoursValue(existing ? String(existing.hours) : '');
+              setSortingHeadcountValue(existing?.headcount != null ? String(existing.headcount) : '');
               setSortingGoodQtyValue(existing ? String(existing.goodQty) : '');
               setSortingScrapQtyValue(existing ? String(existing.scrapQty) : '');
             }}>{departments.map((department) => <option key={department.key} value={department.key}>{t(department.key)}</option>)}</select></label>
             <label>Heures de tri<input type="number" min="0" step="0.1" value={sortingHoursValue} onChange={(event) => setSortingHoursValue(event.target.value)} placeholder="Ex. 2,5" required /></label>
+            <label>{t('Effectif')}<input type="number" min="0" max="2147483647" step="1" value={sortingHeadcountValue} onChange={(event) => setSortingHeadcountValue(event.target.value)} placeholder="0" required /></label>
             <label>{t('Qte bonne après tri')}<input type="number" min="0" step="1" value={sortingGoodQtyValue} onChange={(event) => setSortingGoodQtyValue(event.target.value)} placeholder="0" required /></label>
             <label>{t('Qte rebut après tri')}<input type="number" min="0" step="1" value={sortingScrapQtyValue} onChange={(event) => setSortingScrapQtyValue(event.target.value)} placeholder="0" required /></label>
             {sortingError && <p className="complaint-error" role="alert">{sortingError}</p>}
-            <div className="complaint-actions"><button type="button" onClick={() => setSortingModalDate('')}>Annuler</button><button className="primary" type="submit" disabled={sortingSaving || !supabase || sortingHoursValue === '' || sortingGoodQtyValue === '' || sortingScrapQtyValue === ''}>{sortingSaving ? 'Enregistrement…' : 'Enregistrer en ligne'}</button></div>
+            <div className="complaint-actions"><button type="button" onClick={() => setSortingModalDate('')}>Annuler</button><button className="primary" type="submit" disabled={monthLocked || sortingSaving || !supabase || sortingHoursValue === '' || sortingHeadcountValue === '' || sortingGoodQtyValue === '' || sortingScrapQtyValue === ''}>{sortingSaving ? 'Enregistrement…' : 'Enregistrer en ligne'}</button></div>
           </form>
         </div>
       )}
@@ -1475,10 +1640,10 @@ function App() {
         <div className="complaint-modal" role="dialog" aria-modal="true" aria-labelledby="complaint-modal-title">
           <form className="complaint-window" onSubmit={saveCustomerComplaint}>
             <header><h2 id="complaint-modal-title">Nouvelle réclamation client</h2><button className="icon-only" type="button" onClick={() => setComplaintModalDate('')} aria-label="Fermer"><X size={18} /></button></header>
-            <label>Date de réclamation<input type="date" value={complaintModalDate} onChange={(event) => setComplaintModalDate(event.target.value)} required /></label>
+            <label>Date de réclamation<input type="date" min={selectedBounds.from} max={selectedBounds.to} value={complaintModalDate} onChange={(event) => setComplaintModalDate(event.target.value)} required /></label>
             <label>Détail<textarea value={complaintDraft} onChange={(event) => setComplaintDraft(event.target.value)} rows="4" placeholder="Décrivez la réclamation du client…" required autoFocus /></label>
             {complaintError && <p className="complaint-error" role="alert">{complaintError}</p>}
-            <div className="complaint-actions"><button type="button" onClick={() => setComplaintModalDate('')}>Annuler</button><button className="primary" type="submit" disabled={complaintSaving || !supabase}>{complaintSaving ? 'Enregistrement…' : 'Enregistrer en ligne'}</button></div>
+            <div className="complaint-actions"><button type="button" onClick={() => setComplaintModalDate('')}>Annuler</button><button className="primary" type="submit" disabled={monthLocked || complaintSaving || !supabase}>{complaintSaving ? 'Enregistrement…' : 'Enregistrer en ligne'}</button></div>
           </form>
         </div>
       )}
@@ -1488,7 +1653,7 @@ function App() {
           <section className="confirm-window">
             <header><Trash2 size={22} /><h2 id="complaint-delete-title">Supprimer cette réclamation ?</h2></header>
             <p>{formatDate(complaintDeleteCandidate.date)} — {complaintDeleteCandidate.details}</p>
-            <div className="confirm-actions"><button type="button" onClick={() => setComplaintDeleteCandidate(null)}>Annuler</button><button className="danger-button" type="button" onClick={() => deleteCustomerComplaint(complaintDeleteCandidate)}>Supprimer</button></div>
+            <div className="confirm-actions"><button type="button" onClick={() => setComplaintDeleteCandidate(null)}>Annuler</button><button className="danger-button" type="button" disabled={monthLocked} onClick={() => deleteCustomerComplaint(complaintDeleteCandidate)}>Supprimer</button></div>
           </section>
         </div>
       )}
@@ -1503,7 +1668,7 @@ function App() {
             <p>{formatDate(deleteCandidate.production_date)} - {t(deleteCandidate.department)} - {deleteCandidate.machine_code}</p>
             <div className="confirm-actions">
               <button type="button" onClick={() => setDeleteCandidate(null)}>{t("Annuler")}</button>
-              <button className="danger-button" type="button" onClick={() => confirmDeleteProduction(deleteCandidate)}>{t("OK supprimer")}</button>
+              <button className="danger-button" type="button" disabled={monthLocked} onClick={() => confirmDeleteProduction(deleteCandidate)}>{t("OK supprimer")}</button>
             </div>
           </section>
         </div>
