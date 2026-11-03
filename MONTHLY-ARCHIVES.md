@@ -4,7 +4,7 @@ Le mois courant s'ouvre automatiquement au chargement de l'application et lors d
 
 Le calendrier **Date à analyser** du graphique **Rebuts par jour** permet aussi de choisir directement une date d'un mois précédent. Le mois affiché suit cette date et le jour choisi reste sélectionné. **Cumul** affiche ensuite tous les jours de ce mois. Les mois futurs restent indisponibles.
 
-Aucune saisie n'est effacée au changement de mois. Tous les départements, les graphiques, la liste des saisies à compléter, les réclamations, le tri avec effectif, les affectations et l'historique utilisent le mois affiché. Les filtres supplémentaires de dates, machine, référence et OF affinent la table de production ; l'export couvre toujours le mois complet et tous les départements.
+Aucune saisie n'est effacée au changement de mois. Tous les départements, les graphiques, la liste des saisies à compléter, les réclamations, le tri avec effectif, les affectations et l'historique utilisent le mois affiché. Les filtres supplémentaires de dates, machine, référence et OF affinent la table de production. Le filtre **Client** s'applique aux données de production et de qualité de tous les départements : tableaux, graphiques, historique, saisies à compléter et affectations issues de la production. Le tri et les réclamations restent globaux, car leurs saisies ne portent pas de client. L'export et la clôture couvrent toujours le mois complet, tous les clients et tous les départements, même lorsqu'un client est sélectionné.
 
 ## Installation Supabase
 

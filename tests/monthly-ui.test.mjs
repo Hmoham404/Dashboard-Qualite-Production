@@ -29,7 +29,7 @@ test('the UI rolls over without deleting October, supports history and persists 
     }
     window.setInterval = (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id; };
     window.clearInterval = (id) => timers.delete(id);
-    const october = { id: 'local-oct', production_date: '2026-10-31', department: 'Injection', machine_code: 'OCT-MACHINE', product_reference: 'OCT-REF', work_order: 'OCT-OF', good_qty: 100, scrap_qty: 0, mod_count: 0, entry_status: 'Complete', note: 'REF_ARTICLE: OCT-ARTICLE' };
+    const october = { id: 'local-oct', production_date: '2026-10-31', department: 'Injection', machine_code: 'OCT-MACHINE', product_reference: 'OCT-REF', work_order: 'OCT-OF', good_qty: 100, scrap_qty: 0, mod_count: 0, entry_status: 'Complete', note: 'REF_ARTICLE: OCT-ARTICLE\nCLIENT: Client octobre' };
     localStorage.setItem('production_entries', JSON.stringify([october]));
     const source = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
       .replace("createRoot(document.getElementById('root')).render(<App />);", 'export { App };');
@@ -49,7 +49,7 @@ test('the UI rolls over without deleting October, supports history and persists 
              export const ComposedChart=Chart, BarChart=Chart;
              export const ResponsiveContainer=({children})=>React.createElement('div',null,children);
              const Empty=()=>null;
-             export const Area=Empty,Bar=Empty,CartesianGrid=Empty,Cell=Empty,DefaultLegendContent=Empty,LabelList=Empty,Legend=Empty,Line=Empty,ReferenceLine=Empty,Tooltip=Empty,XAxis=Empty,YAxis=Empty;`, loader: 'js' }));
+             export const Area=Empty,Bar=Empty,CartesianGrid=Empty,Cell=Empty,DefaultLegendContent=Empty,LabelList=Empty,Legend=Empty,Line=Empty,Rectangle=Empty,ReferenceLine=Empty,Tooltip=Empty,XAxis=Empty,YAxis=Empty;`, loader: 'js' }));
       } }],
     });
     writeFileSync(bundlePath, output.outputFiles[0].text);
@@ -113,14 +113,21 @@ test('the UI rolls over without deleting October, supports history and persists 
     await change(monthInput(), '2026-10');
     assert.ok(document.body.textContent.includes('OCT-MACHINE'));
     assert.ok(!document.body.textContent.includes('NOV-OF'));
+    const otherOctober = { ...october, id: 'local-other-oct', machine_code: 'OCT-OTHER-CLIENT', note: 'REF_ARTICLE: OTHER\nCLIENT: Autre client', entry_status: 'Qualite a completer' };
+    localStorage.setItem('production_entries', JSON.stringify([...JSON.parse(localStorage.getItem('production_entries')), otherOctober]));
+    await click(button('Actualiser'));
+    await change(document.getElementById('filter-client'), 'Client octobre');
+    assert.ok(!document.querySelector('.production-detail-panel').textContent.includes('OCT-OTHER-CLIENT'));
     await click(button('Clôturer le mois'));
+    assert.equal(document.querySelector('.month-close-window .month-summary dd').textContent, '2', 'Closure counts include every client');
+    assert.ok(document.querySelector('.month-close-window .month-warning').textContent.includes('1'), 'Hidden incomplete entries are included in the closure warning');
     assert.equal(localStorage.getItem('monthly_closures'), null, 'Opening confirmation must not close anything');
     await click(button('Exporter et clôturer'));
     assert.equal(document.querySelector('.month-entry-fields').disabled, true);
     assert.equal(button('Clôturer le mois').disabled, true);
     const archived = JSON.parse(localStorage.getItem('monthly_closures'))[0];
     assert.equal(archived.month, '2026-10-01');
-    assert.equal(archived.snapshot.production_entries.length, 1);
+    assert.equal(archived.snapshot.production_entries.length, 2, 'Client filtering must never truncate the monthly archive');
     assert.equal(globalThis.__monthlyDownloads[0].name, 'bilan_2026-10.xlsx');
     await click(button('Exporter le mois'));
     assert.equal(globalThis.__monthlyDownloads.length, 2);

@@ -3,7 +3,7 @@ export const scrapTargetsByDepartment = {
   Soudure: 0.5,
   Metallisation: 7,
   Assemblage: 3,
-  Serigraphie: 0.5,
+  Serigraphie: 3,
 };
 
 export const scrapRateColors = {

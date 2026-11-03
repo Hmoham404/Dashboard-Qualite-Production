@@ -1,9 +1,10 @@
 import * as XLSX from 'xlsx';
+import { extractClientName } from './qualityNote.js';
 
 const sheets = [
   ['Production', 'production_entries', {
     id: 'Identifiant', production_date: 'Date', department: 'Departement', machine_code: 'Machine / Poste',
-    product_reference: 'Reference machine', article_reference: 'Reference article', work_order: 'OF / Bon', good_qty: 'Qte bonne', scrap_qty: 'Qte rebut',
+    product_reference: 'Reference machine', article_reference: 'Reference article', client_name: 'Client', work_order: 'OF / Bon', good_qty: 'Qte bonne', scrap_qty: 'Qte rebut',
     justified_scrap_qty: 'Rebut justifie', purge_kg: 'Purge kg', machine_hours: 'Heures machine', work_hours: 'Heure travail',
     mod_count: 'MOD', mod_hours: 'Total H MOD', operator_names: 'Nom MOD', defect_type: 'Pareto defaut',
     defect_breakdown: 'Défauts détaillés', note: 'Note qualite', entry_status: 'Etat', missing_fields: 'Champs manquants',
@@ -32,7 +33,7 @@ export function buildMonthlyWorkbook(snapshot, { month, closedAt = null, t = (va
     const records = (snapshot[key] || []).map((row) => Object.fromEntries(Object.entries(columns).map(([field, label]) => {
       const value = field === 'article_reference'
         ? row.article_reference || String(row.note || '').match(/^REF_ARTICLE:\s*(.*)$/m)?.[1]?.trim()
-        : row[field];
+        : field === 'client_name' ? row.client_name || extractClientName(row.note) : row[field];
       return [t(label), value != null && typeof value === 'object' ? JSON.stringify(value) : value ?? null];
     })));
     const headers = Object.values(columns).map((label) => t(label));

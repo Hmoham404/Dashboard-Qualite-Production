@@ -45,6 +45,13 @@ import { languages, languageStorageKey, readLanguage, createTranslator } from '.
 import { scrapTargetsByDepartment, scrapRateColors, scrapRateStatus, scrapRateGradientStops } from './scrapRate.js';
 import { localDateKey, monthBounds, monthDates, rowsForMonth, entryDateForMonth, buildMonthSnapshot, isMonthClosed, assertLocalMonthsOpen, readAllRows } from './monthly.js';
 import { buildMonthlyWorkbook } from './monthlyExport.js';
+import { buildDefectEvolution } from './defectEvolution.js';
+import DefectEvolutionDialog, { DefectBar } from './DefectEvolutionDialog.jsx';
+import { extractArticleReference, extractClientName, extractQualityNote, buildQualityNote } from './qualityNote.js';
+import { filterProductionByClient, productionClients } from './productionFilters.js';
+import LotWorkspacePage from './LotWorkspacePage.jsx';
+
+const defectColors = ['#287fff', '#ff8124', '#20a77a', '#a855f7', '#e23d3d', '#0891b2', '#d8a80e'];
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -146,19 +153,6 @@ function addDays(date, days) {
   return next;
 }
 
-function extractArticleReference(note = '') {
-  return String(note).match(/REF_ARTICLE:\s*(.*)/)?.[1]?.split('\n')[0]?.trim() || '';
-}
-
-function extractQualityNote(note = '') {
-  return String(note)
-    .replace(/^REF_ARTICLE:.*$/m, '')
-    .replace(/^SAISIE_QUALITE_SEULE:.*$/m, '')
-    .replace(/^NOTE_QUALITE:\s*/m, '')
-    .replace(/^REPARTITION_DEFAUTS:.*$/m, '')
-    .trim();
-}
-
 function extractDefectBreakdown(note = '', defectType = '', scrapQty = '') {
   const match = String(note).match(/^REPARTITION_DEFAUTS:\s*(.*)$/m);
   if (match) {
@@ -185,13 +179,6 @@ function scrapDefectEntries(row) {
   return hasQuantities
     ? breakdown.filter((item) => toNumber(item.qty) > 0).map((item) => [item.type, toNumber(item.qty)])
     : [[row.defect_type || 'Autres', toNumber(row.scrap_qty)]];
-}
-
-function buildQualityNote(articleReference, qualityNote) {
-  return [
-    articleReference?.trim() ? `REF_ARTICLE: ${articleReference.trim()}` : '',
-    qualityNote?.trim() ? `NOTE_QUALITE: ${qualityNote.trim()}` : '',
-  ].filter(Boolean).join('\n');
 }
 
 function RateDot({ cx, cy, payload, r = 6 }) {
@@ -319,6 +306,7 @@ async function saveRows(name, rows) {
   if (!rows.length) return rows;
   const dbRows = rows.map((row) => {
     const clean = cleanDbRow(row);
+    if (name === 'production_entries') delete clean.client_name;
     if (!clean.id) delete clean.id;
     return clean;
   });
@@ -389,6 +377,12 @@ async function deleteRow(name, row) {
 
 function App() {
   const sheetPanelRef = useRef(null);
+  const [showLotPage, setShowLotPage] = useState(() => window.location.hash === '#lot');
+  useEffect(() => {
+    const updatePage = () => setShowLotPage(window.location.hash === '#lot');
+    window.addEventListener('hashchange', updatePage);
+    return () => window.removeEventListener('hashchange', updatePage);
+  }, []);
   const [language, setLanguage] = useState(() => readLanguage());
   const t = useMemo(() => createTranslator(language), [language]);
   const locale = languages.find(({ code }) => code === language).locale;
@@ -427,11 +421,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.lang = language;
-    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
-    document.title = t('Dashboard Qualite & Production');
+    document.documentElement.lang = showLotPage ? 'en' : language;
+    document.documentElement.dir = !showLotPage && language === 'ar' ? 'rtl' : 'ltr';
+    document.title = showLotPage ? 'LOT — Coming soon' : t('Dashboard Qualite & Production');
     try { localStorage.setItem(languageStorageKey, language); } catch { /* Storage may be disabled. */ }
-  }, [language, t]);
+  }, [language, t, showLotPage]);
 
   const [activeDept, setActiveDept] = useState('Injection');
   const [entries, setEntries] = useState([]);
@@ -456,6 +450,7 @@ function App() {
   const [complaintError, setComplaintError] = useState('');
   const [complaintDeleteCandidate, setComplaintDeleteCandidate] = useState(null);
   const [defectParetoMode, setDefectParetoMode] = useState('cumulative');
+  const [selectedDefect, setSelectedDefect] = useState(null);
   const [defectParetoDate, setDefectParetoDate] = useState(() => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -467,7 +462,8 @@ function App() {
   const [showAllProduction, setShowAllProduction] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [serviceMode, setServiceMode] = useState('production');
-  const [filters, setFilters] = useState({ ...selectedBounds, machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
+  const [filters, setFilters] = useState({ ...selectedBounds, machine: 'Tous', reference: 'Tous', workOrder: 'Tous', client: '' });
+  useEffect(() => { setSelectedDefect(null); }, [activeDept, selectedMonth, filters.client]);
   const [form, setForm] = useState({
     id: '',
     production_date: defaultEntryDate,
@@ -486,6 +482,7 @@ function App() {
     defect_type: 'Bavure',
     defect_breakdown: [],
     article_reference: '',
+    client_name: '',
     note: '',
     entry_status: 'Qualite a completer',
     missing_fields: []
@@ -536,7 +533,7 @@ function App() {
   }, [selectedMonth, reloadCount]);
 
   useEffect(() => {
-    setFilters({ ...monthBounds(selectedMonth), machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
+    setFilters({ ...monthBounds(selectedMonth), machine: 'Tous', reference: 'Tous', workOrder: 'Tous', client: '' });
     setForm(emptyForm());
     setDefectParetoDate((date) => date.startsWith(`${selectedMonth}-`) ? date : entryDateForMonth(selectedMonth, today));
     setComplaintChartDate('');
@@ -591,7 +588,12 @@ function App() {
     return () => { cancelled = true; };
   }, [selectedMonth, reloadCount]);
 
-  const monthEntries = useMemo(() => rowsForMonth(entries, selectedMonth), [entries, selectedMonth]);
+  const allMonthEntries = useMemo(() => rowsForMonth(entries, selectedMonth), [entries, selectedMonth]);
+  const clientEntries = useMemo(() => filterProductionByClient(entries, filters.client), [entries, filters.client]);
+  const monthEntries = useMemo(() => rowsForMonth(clientEntries, selectedMonth), [clientEntries, selectedMonth]);
+  const clientOptions = useMemo(() => productionClients(allMonthEntries), [allMonthEntries]);
+  const monthIncompleteCount = useMemo(() => allMonthEntries.filter((row) =>
+    row.entry_status && row.entry_status !== 'Complete' || completionStatus(row).status !== 'Complete').length, [allMonthEntries]);
   const monthComplaints = useMemo(() => rowsForMonth(customerComplaints, selectedMonth, 'date'), [customerComplaints, selectedMonth]);
   const monthSortingHours = useMemo(() => rowsForMonth(sortingHours, selectedMonth, 'date'), [sortingHours, selectedMonth]);
   const archiveReady = !dataLoading && !dataError && extraDataReady.complaints && extraDataReady.sorting;
@@ -782,7 +784,7 @@ function App() {
   const factoryEvaluationData = useMemo(() => {
     const now = new Date(`${selectedMonth === currentMonth ? today : selectedBounds.to}T12:00:00`);
     const scoreBucket = (bucket) => {
-      const rows = entries.filter((entry) => entry.department === activeDept && entry.production_date >= bucket.from && entry.production_date <= bucket.to);
+      const rows = clientEntries.filter((entry) => entry.department === activeDept && entry.production_date >= bucket.from && entry.production_date <= bucket.to);
       const good = rows.reduce((sum, row) => sum + toNumber(row.good_qty), 0);
       const scrap = rows.reduce((sum, row) => sum + toNumber(row.scrap_qty), 0);
       const total = good + scrap;
@@ -813,7 +815,7 @@ function App() {
       buckets.push(scoreBucket({ axisKey: `day-${index}`, label: day.toLocaleDateString(locale, { weekday: 'short' }), section: 'week', from: isoDate(day), to: isoDate(day) }));
     }
     return buckets;
-  }, [entries, activeDept, locale, selectedMonth, currentMonth, today, selectedBounds.to]);
+  }, [clientEntries, activeDept, locale, selectedMonth, currentMonth, today, selectedBounds.to]);
 
   const defectPareto = useMemo(() => {
     const departmentRows = monthEntries.filter((row) => row.department === activeDept);
@@ -851,6 +853,14 @@ function App() {
   }, [monthEntries, activeDept, defectParetoMode, defectParetoDate, selectedDates]);
 
   const machinesForDept = machines.filter((machine) => machine.department === form.department || !machine.department);
+  const defectEvolution = useMemo(() => selectedDefect
+    ? buildDefectEvolution(monthEntries, selectedDefect, scrapDefectEntries) : [], [monthEntries, selectedDefect]);
+
+  function openDefectEvolution(type, trigger) {
+    const index = defectPareto.data.findIndex((item) => item.type === type);
+    if (index < 0) return;
+    setSelectedDefect({ type, department: activeDept, month: selectedMonth, date: defectPareto.date, color: defectColors[index % defectColors.length], trigger });
+  }
   const referencesForDept = references.filter((ref) => ref.family === form.department || !ref.family);
   const articleReferences = useMemo(() => {
     return [...new Set(monthEntries.map((row) => row.product_reference).filter(Boolean))].sort();
@@ -876,8 +886,8 @@ function App() {
         mod_hours: (previous?.mod_hours || 0) + toNumber(row.mod_hours)
       });
     });
-    return [...rowsForMonth(assignments, selectedMonth, 'shift_date'), ...map.values()];
-  }, [monthEntries, assignments, selectedMonth]);
+    return [...(filters.client ? [] : rowsForMonth(assignments, selectedMonth, 'shift_date')), ...map.values()];
+  }, [monthEntries, assignments, selectedMonth, filters.client]);
 
   function selectDepartment(department) {
     setActiveDept(department);
@@ -920,6 +930,7 @@ function App() {
       defect_breakdown: [],
       note: '',
       article_reference: '',
+      client_name: '',
       entry_status: 'Qualite a completer',
       missing_fields: [],
       ...overrides,
@@ -935,6 +946,7 @@ function App() {
       work_hours: row.work_hours ?? row.machine_hours ?? 0,
       defect_breakdown: defectBreakdownForRow(row),
       article_reference: extractArticleReference(row.note),
+      client_name: row.client_name || extractClientName(row.note),
       note: extractQualityNote(row.note),
       entry_status: row.entry_status || 'Qualite a completer',
       missing_fields: row.missing_fields || completionStatus(row).missingFields,
@@ -986,7 +998,7 @@ function App() {
       const payload = {
         ...row,
         article_reference: undefined,
-        note: '',
+        note: entries.find((item) => item.id === row.id)?.note || buildQualityNote('', '', row.client_name),
         entry_status: 'Qualite a completer',
         missing_fields: ['Controle qualite'],
       };
@@ -1029,9 +1041,9 @@ function App() {
         return;
       }
       const note = [
-        buildQualityNote(row.article_reference, row.note),
+        buildQualityNote(row.article_reference, row.note, row.client_name),
         row.defect_breakdown.length ? `REPARTITION_DEFAUTS: ${JSON.stringify(row.defect_breakdown)}` : '',
-        form.id ? '' : qualityOnlyMarker,
+        !form.id || isQualityOnlyEntry(entries.find((item) => item.id === form.id) || {}) ? qualityOnlyMarker : '',
       ].filter(Boolean).join('\n');
       const completion = completionStatus({ ...row, note });
       const payload = {
@@ -1077,7 +1089,7 @@ function App() {
       const payload = {
         ...row,
         article_reference: undefined,
-        note: buildQualityNote(row.article_reference, row.note),
+        note: buildQualityNote(row.article_reference, row.note, row.client_name),
         entry_status: completion.status,
         missing_fields: completion.missingFields,
       };
@@ -1208,11 +1220,12 @@ function App() {
   }
 
   function resetFilters() {
-    setFilters({ ...selectedBounds, machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
+    setFilters({ ...selectedBounds, machine: 'Tous', reference: 'Tous', workOrder: 'Tous', client: '' });
   }
 
   return (
-    <main className="shell">
+    <>
+    <main className="shell" hidden={showLotPage}>
       <header className="topbar">
         <div className="brand">
           <div>
@@ -1239,6 +1252,7 @@ function App() {
           <span className={selectedClosure ? 'month-state month-closed' : 'month-state'}>{t(selectedClosure ? 'Mois clôturé · lecture seule' : 'Mois ouvert')}</span>
         </div>
         <div className="month-actions">
+          <a className="lot-button" href="#lot">{t('LOT')}</a>
           <button type="button" disabled={dataLoading || closingMonth} onClick={() => setReloadCount((count) => count + 1)}><RefreshCcw size={16} />{t('Actualiser')}</button>
           <button className="export-button" type="button" disabled={closingMonth || (!selectedClosure && !archiveReady)} onClick={() => exportExcel()}><FileDown size={16} />{t('Exporter le mois')}</button>
           <button className="primary" type="button" disabled={closingMonth || Boolean(selectedClosure) || selectedMonth >= currentMonth || !archiveReady || closureState !== 'ready'} onClick={() => { setMonthExportError(''); setShowCloseMonth(true); }}>{t('Clôturer le mois')}</button>
@@ -1259,7 +1273,11 @@ function App() {
         <label>{t("Machine / Poste")}<select value={filters.machine} onChange={(e) => setFilters({ ...filters, machine: e.target.value })}><option value="Tous">{t("Tous")}</option>{machines.map((machine) => <option key={machine.id || machine.code} value={machine.code}>{machine.code}</option>)}</select></label>
         <label>{t("Reference machine")}<select value={filters.reference} onChange={(e) => setFilters({ ...filters, reference: e.target.value })}><option value="Tous">{t("Tous")}</option>{articleReferences.map((ref) => <option key={ref} value={ref}>{ref}</option>)}</select></label>
         <label>{t("OF / Bon")}<select value={filters.workOrder} onChange={(e) => setFilters({ ...filters, workOrder: e.target.value })}><option value="Tous">{t("Tous")}</option>{[...new Set(monthEntries.map((row) => row.work_order).filter(Boolean))].map((of) => <option key={of} value={of}>{of}</option>)}</select></label>
+        <label>{t('Client')}<select id="filter-client" value={filters.client} onChange={(e) => setFilters({ ...filters, client: e.target.value, machine: 'Tous', reference: 'Tous', workOrder: 'Tous' })}>
+          <option value="">{t('Tous')}</option>{clientOptions.map((client) => <option key={client} value={client}>{client}</option>)}
+        </select></label>
         <button type="button" onClick={resetFilters}><RefreshCcw size={18} />{t('Réinitialiser les filtres')}</button>
+        {filters.client && <p className="filter-scope" role="status">{t('Client : {client} — production et qualité, tous départements.', { client: filters.client })} {t('L’export et la clôture couvrent le mois complet, tous clients confondus.')}</p>}
       </section>
 
       <section className="dept-tabs">
@@ -1304,16 +1322,22 @@ function App() {
               }}><option value="">{t("Choisir ligne production")}</option>{qualityQueue.map((row) => <option key={row.id} value={row.id}>{formatDate(row.production_date)} - {t(row.department)} - {row.machine_code} - {row.work_order}</option>)}</select></label>
               <button type="button" onClick={startQualityEntry}><PlusCircle size={18} />{t("Nouvelle ligne qualite")}</button>
             </div>
+            <div className="quality-fields quality-identification">
             <label>{t("Date")}<input type="date" min={selectedBounds.from} max={selectedBounds.to} required value={form.production_date} onChange={(e) => setForm({ ...form, production_date: e.target.value })} /></label>
             <label>{t("Departement")}<select value={form.department} onChange={(e) => { const nextDefect = defaultDefect(e.target.value); setForm({ ...form, department: e.target.value, defect_type: nextDefect, defect_breakdown: [] }); }}>{departments.map((dept) => <option key={dept.key} value={dept.key}>{t(dept.key)}</option>)}</select></label>
             <label>{t("Machine / Poste")}<input placeholder={t("Machine / Poste")} value={form.machine_code || ''} onChange={(e) => setForm({ ...form, machine_code: e.target.value })} /></label>
             <label>{t("Reference machine")}<input placeholder={t("Reference machine")} value={form.product_reference || ''} onChange={(e) => setForm({ ...form, product_reference: e.target.value })} /></label>
             <label>{t("OF / Bon")}<input placeholder={t("OF / Bon")} value={form.work_order || ''} onChange={(e) => setForm({ ...form, work_order: e.target.value })} /></label>
             <label>{t("Reference article")}<input placeholder={t("Reference article")} value={form.article_reference} onChange={(e) => setForm({ ...form, article_reference: e.target.value })} /></label>
+            <label>{t('Client')}<input id="quality-client" placeholder={t('Nom du client')} value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} /></label>
+            </div>
+            <div className="quality-fields quality-measurements">
             <label>{t("Qte bonne")}<input type="number" min="0" value={form.good_qty} onChange={(e) => setForm({ ...form, good_qty: e.target.value })} /></label>
             <label>{t("Qte rebut")}<input type="number" min="0" value={form.scrap_qty} onChange={(e) => setForm({ ...form, scrap_qty: e.target.value })} /></label>
             <label>{t("Rebut justifie")}<input type="number" min="0" value={form.justified_scrap_qty} onChange={(e) => setForm({ ...form, justified_scrap_qty: e.target.value })} /></label>
             <label>{t("Purge kg")}<input type="number" min="0" step="0.1" value={form.purge_kg} onChange={(e) => setForm({ ...form, purge_kg: e.target.value })} /></label>
+            <label className="quality-note">{t("Note qualite")}<input placeholder={t("Observation controle")} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
+            </div>
             <div className="defect-breakdown">
               <strong>{t("Repartition defauts")}</strong>
               {(form.defect_breakdown || []).map((item, index) => <div className="defect-breakdown-row" key={index}>
@@ -1327,7 +1351,6 @@ function App() {
               <div className="defect-breakdown-footer"><button type="button" onClick={() => setForm({ ...form, defect_breakdown: [...(form.defect_breakdown || []), { type: '', qty: '' }] })}><PlusCircle size={16} />{t("Ajouter un defaut")}</button><span>{t("Total defauts")}: {breakdownTotal(form.defect_breakdown)} / {toNumber(form.scrap_qty)}</span></div>
               {form.defect_breakdown?.some((item) => toNumber(item.qty) > 0) && breakdownTotal(form.defect_breakdown) !== toNumber(form.scrap_qty) && <small className="defect-breakdown-error">{t("Total defauts doit correspondre a qte rebut")}</small>}
             </div>
-            <label>{t("Note qualite")}<input placeholder={t("Observation controle")} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
             <div className="sheet-actions">
               <button className="primary" type="submit"><CheckCircle2 size={18} />{t("Valider controle qualite")}</button>
             </div>
@@ -1417,6 +1440,7 @@ function App() {
           </ResponsiveContainer>
         </Panel>
         <Panel title={`Réclamations clients — ${monthLabel}`} className="span12 complaint-chart-panel">
+          {filters.client && <p className="chart-instruction">{t('Données globales : ces saisies ne sont pas rattachées à un client.')}</p>}
           <p className="chart-instruction">Du 1er au dernier jour du mois. Chaque point : 1 le jour de la réclamation, 0 sinon. Double-cliquez sur une date pour ajouter une réclamation.</p>
           <ResponsiveContainer height={260}>
             <ComposedChart data={customerComplaintData} onMouseMove={(state) => state?.activeLabel && setComplaintChartDate(state.activeLabel)} onDoubleClick={(state) => openCustomerComplaintForm(state?.activeLabel || complaintChartDate)}>
@@ -1472,6 +1496,7 @@ function App() {
           </div>
           {defectParetoMode === 'j1' ? <>
             <p className="chart-instruction">Total des rebuts le {formatDate(defectPareto.date)} : {defectPareto.total.toLocaleString(locale)} — détail par type de défaut.</p>
+            {!!defectPareto.data.length && <p className="defect-drilldown-hint">{t('Cliquez sur un défaut pour voir son évolution sur le mois.')}</p>}
             {!defectPareto.hasEntries && <p className="empty-history">Aucune saisie pour ce département à cette date.</p>}
             <ResponsiveContainer height={260}>
               <BarChart data={defectPareto.data} margin={{ top: 12, right: 18, bottom: 8, left: 8 }}>
@@ -1479,13 +1504,15 @@ function App() {
                 <XAxis dataKey="type" interval={0} angle={-15} textAnchor="end" height={56} />
                 <YAxis allowDecimals={false} />
                 <Tooltip formatter={(value) => [`${value} rebuts`, 'Défaut']} />
-                <Bar dataKey="count" name="Rebuts par défaut" radius={[5, 5, 0, 0]}>
-                  {defectPareto.data.map((item, index) => <Cell key={item.type} fill={['#287fff', '#ff8124', '#20a77a', '#a855f7', '#e23d3d', '#0891b2', '#d8a80e'][index % 7]} />)}
+                <Bar dataKey="count" name="Rebuts par défaut" radius={[5, 5, 0, 0]} activeBar={false}
+                  shape={(props) => <DefectBar {...props} onSelect={openDefectEvolution} label={t('Évolution du défaut : {defect}', { defect: t(props.payload.type) })} />}>
+                  {defectPareto.data.map((item, index) => <Cell key={item.type} fill={defectColors[index % defectColors.length]} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
             {!!defectPareto.data.length && <div className="defect-type-legend">
-              {defectPareto.data.map((item, index) => <span key={item.type}><i style={{ backgroundColor: ['#287fff', '#ff8124', '#20a77a', '#a855f7', '#e23d3d', '#0891b2', '#d8a80e'][index % 7] }} />{item.type}</span>)}
+              {defectPareto.data.map((item, index) => <button type="button" key={item.type} onClick={(event) => openDefectEvolution(item.type, event.currentTarget)}
+                aria-label={t('Évolution du défaut : {defect}', { defect: t(item.type) })}><i style={{ backgroundColor: defectColors[index % defectColors.length] }} />{t(item.type)}</button>)}
             </div>}
           </> : <>
             <p className="chart-instruction">Total réel des rebuts par jour pour {t(activeDept)}. Chaque barre correspond à une date.</p>
@@ -1501,6 +1528,7 @@ function App() {
           </>}
         </Panel>
         <Panel title={`Heures de tri par jour — ${monthLabel}`} className="span12 sorting-hours-panel">
+          {filters.client && <p className="chart-instruction">{t('Données globales : ces saisies ne sont pas rattachées à un client.')}</p>}
           <p className="chart-instruction">Survolez une barre pour voir les heures, l’effectif, les quantités bonnes et les rebuts de chaque département. Double-cliquez sur une date pour modifier la saisie.</p>
           {sortingError && <p className="complaint-error" role="alert">{sortingError}</p>}
           {!supabase && <p className="complaint-error">Supabase n’est pas configuré. Les heures de tri ne seront pas enregistrées localement.</p>}
@@ -1543,7 +1571,7 @@ function App() {
         </Panel>
       </section>
 
-      <Panel title={t("Detail de la production")}>
+      <Panel title={t("Detail de la production")} className="production-detail-panel">
         <table>
           <thead><tr><th>{t("Etat")}</th><th>{t("Date")}</th><th>{t("Departement")}</th><th>{t("Machine / Poste")}</th><th>{t("Reference machine")}</th><th>{t("Reference article")}</th><th>{t("OF / Bon")}</th><th>{t("Qte bonne")}</th><th>{t("Qte rebut")}</th><th>{t("Rebut justifie")}</th><th>{t("Purge kg")}</th><th>{t("Pareto defaut")}</th><th>{t("Heure travail")}</th><th>{t("MOD")}</th><th>{t("Nom MOD")}</th><th>{t("Total H MOD")}</th><th></th></tr></thead>
           <tbody>
@@ -1558,6 +1586,8 @@ function App() {
         </table>
         {filtered.length > 3 && <div className="incomplete-actions"><button type="button" onClick={() => setShowAllProduction((current) => !current)}>{showAllProduction ? t("Afficher les 3 dernieres") : t("Afficher tout")}</button></div>}
       </Panel>
+
+      {selectedDefect && <DefectEvolutionDialog selection={selectedDefect} data={defectEvolution} monthLabel={monthLabel} locale={locale} t={t} onClose={() => setSelectedDefect(null)} />}
 
       {showHistoryWindow && (
         <div className="history-modal" role="dialog" aria-modal="true" aria-label={t("Fenetre historique des ajouts")}>
@@ -1593,11 +1623,11 @@ function App() {
             <header><CheckCircle2 size={22} /><h2 id="close-month-title">{t('Confirmer la clôture')} — {monthLabel}</h2></header>
             <p>{t('Une archive complète sera conservée et le bilan Excel sera téléchargé.')}</p>
             <dl className="month-summary">
-              <div><dt>{t('Production')}</dt><dd>{monthEntries.length.toLocaleString(locale)}</dd></div>
+              <div><dt>{t('Production')}</dt><dd>{allMonthEntries.length.toLocaleString(locale)}</dd></div>
               <div><dt>{t('Heures de tri')}</dt><dd>{monthSortingHours.length.toLocaleString(locale)}</dd></div>
               <div><dt>{t('Réclamations')}</dt><dd>{monthComplaints.length.toLocaleString(locale)}</dd></div>
             </dl>
-            {!!incompleteEntries.length && <p className="month-warning">{t('{count} saisie(s) à compléter seront conservées dans l’archive.', { count: incompleteEntries.length })}</p>}
+            {!!monthIncompleteCount && <p className="month-warning">{t('{count} saisie(s) à compléter seront conservées dans l’archive.', { count: monthIncompleteCount })}</p>}
             <p>{t('Après validation, les ajouts, modifications et suppressions de ce mois seront bloqués pour tous les départements. La consultation et l’export resteront disponibles.')}</p>
             {monthExportError && <p className="complaint-error" role="alert">{monthExportError}</p>}
             <div className="confirm-actions">
@@ -1678,6 +1708,8 @@ function App() {
         </div>
       )}
     </main>
+    {showLotPage && <LotWorkspacePage />}
+    </>
   );
 }
 

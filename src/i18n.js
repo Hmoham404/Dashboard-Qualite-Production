@@ -20,6 +20,21 @@ export function readLanguage(storage) {
 // French source keys keep stored department/defect identifiers independent of display language.
 // Columns: French | English | Arabic | Simplified Chinese | Italian.
 const rows = `
+LOT|LOT|LOT|LOT|LOT
+Client : {client} — production et qualité, tous départements.|Customer: {client} — production and quality, all departments.|العميل: {client} — الإنتاج والجودة في جميع الأقسام.|客户：{client} — 所有部门的生产和质量。|Cliente: {client} — produzione e qualità, tutti i reparti.
+L’export et la clôture couvrent le mois complet, tous clients confondus.|Export and closing cover the full month for all customers.|يشمل التصدير والإقفال الشهر الكامل لجميع العملاء.|导出和结账涵盖所有客户的完整月份。|Esportazione e chiusura coprono il mese completo per tutti i clienti.
+Données globales : ces saisies ne sont pas rattachées à un client.|Global data: these entries are not linked to a customer.|بيانات عامة: هذه التسجيلات غير مرتبطة بعميل.|全局数据：这些记录未关联客户。|Dati globali: queste registrazioni non sono associate a un cliente.
+Client|Customer|العميل|客户|Cliente
+Nom du client|Customer name|اسم العميل|客户名称|Nome del cliente
+Fermer|Close|إغلاق|关闭|Chiudi
+Évolution du défaut|Defect trend|تطور العيب|缺陷趋势|Andamento del difetto
+Évolution du défaut : {defect}|Defect trend: {defect}|تطور العيب: {defect}|缺陷趋势：{defect}|Andamento del difetto: {defect}
+Cliquez sur un défaut pour voir son évolution sur le mois.|Click a defect to view its trend over the month.|انقر على عيب لعرض تطوره خلال الشهر.|点击缺陷查看其月度变化。|Clicca su un difetto per vederne l’andamento nel mese.
+Quantité de ce défaut par jour dans le département sélectionné, sur le mois affiché.|Daily quantity of this defect in the selected department for the displayed month.|الكمية اليومية لهذا العيب في القسم المحدد خلال الشهر المعروض.|所选部门在显示月份中该缺陷的每日数量。|Quantità giornaliera di questo difetto nel reparto selezionato per il mese visualizzato.
+Total du mois|Monthly total|إجمالي الشهر|月度总计|Totale del mese
+Maximum journalier|Daily peak|أعلى كمية يومية|单日峰值|Massimo giornaliero
+Jours avec ce défaut|Days with this defect|أيام ظهور هذا العيب|出现此缺陷的天数|Giorni con questo difetto
+Les jours sans saisie ou sans ce défaut sont affichés à zéro.|Days without entries or without this defect are shown as zero.|تُعرض الأيام دون تسجيل أو دون هذا العيب بقيمة صفر.|无记录或无此缺陷的日期显示为零。|I giorni senza registrazioni o senza questo difetto sono visualizzati a zero.
 Gestion mensuelle|Monthly management|الإدارة الشهرية|月度管理|Gestione mensile
 Mois affiché|Displayed month|الشهر المعروض|显示月份|Mese visualizzato
 Mois ouvert|Open month|شهر مفتوح|月份开放|Mese aperto

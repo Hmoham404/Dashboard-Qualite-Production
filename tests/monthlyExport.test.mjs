@@ -6,7 +6,7 @@ import { buildMonthlyWorkbook } from '../src/monthlyExport.js';
 
 test('the monthly workbook round-trips all four data types, details and headcounts', () => {
   const snapshot = buildMonthSnapshot('2026-10', {
-    production: [{ production_date: '2026-10-31', good_qty: 150, note: 'REF_ARTICLE: A\nNOTE_QUALITE: OK', defect_breakdown: [{ type: 'Bavure', qty: 2 }] }, { production_date: '2026-11-01', good_qty: 999 }],
+    production: [{ production_date: '2026-10-31', good_qty: 150, note: 'REF_ARTICLE: A\nCLIENT: Client exemple\nNOTE_QUALITE: OK', defect_breakdown: [{ type: 'Bavure', qty: 2 }] }, { production_date: '2026-11-01', good_qty: 999 }],
     sorting: [{ sorting_date: '2026-10-31', hours: 8, headcount: 0 }, { sorting_date: '2026-10-30', hours: 2, headcount: null }],
     complaints: [{ complaint_date: '2026-10-02', details: 'Une réclamation' }],
     assignments: [{ shift_date: '2026-10-31', operator_names: 'A / B' }],
@@ -18,6 +18,7 @@ test('the monthly workbook round-trips all four data types, details and headcoun
   assert.equal(production.length, 1);
   assert.equal(production[0]['Qte bonne'], 150);
   assert.equal(production[0]['Reference article'], 'A');
+  assert.equal(production[0].Client, 'Client exemple');
   assert.ok(production[0]['Note qualite'].includes('REF_ARTICLE: A'));
   assert.deepEqual(JSON.parse(production[0]['Défauts détaillés']), [{ type: 'Bavure', qty: 2 }]);
   const sorting = XLSX.utils.sheet_to_json(read.Sheets['Heures de tri'], { defval: null });

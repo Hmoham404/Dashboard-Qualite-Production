@@ -7,10 +7,9 @@
 }
 
 .month-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
   gap: 14px 20px;
   margin-bottom: 14px;
   padding: 16px 18px;
@@ -28,15 +27,25 @@
 }
 
 .month-choice label { display: grid; gap: 6px; color: #526a7b; font-size: .8rem; font-weight: 700; }
-.month-choice input { min-height: 40px; padding: 7px 12px; border: 1px solid #c9d7e1; border-radius: 8px; color: #17364c; background: #fff; }
-.month-toolbar button { min-height: 40px; }
-.month-state { align-self: center; padding: 6px 10px; border-radius: 6px; background: #edf5f0; color: #246647; font-size: .8rem; font-weight: 700; }
+.month-choice input { height: 40px; min-height: 40px; padding: 7px 12px; border: 1px solid #c9d7e1; border-radius: 8px; color: #17364c; background: #fff; }
+.month-toolbar button { height: 40px; min-height: 40px; }
+.month-actions .lot-button { display: inline-flex; align-items: center; justify-content: center; height: 40px; min-width: 76px; padding: 0 14px; border: 1px solid #db2777; border-radius: 5px; background: #db2777; color: #fff; text-decoration: none; font-weight: 800; }
+.month-actions .lot-button:hover { border-color: #be185d; background: #be185d; }
+.lot-button:focus-visible { outline: 2px solid #9d174d; outline-offset: 3px; }
+.lot-page { display: flex; flex-direction: column; min-height: 100dvh; padding: 28px clamp(20px, 5vw, 80px); background: #fff; color: #17364c; }
+.lot-page-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid #f5dce7; }
+.lot-page-header strong { display: inline-flex; align-items: center; gap: 10px; color: #be185d; letter-spacing: .08em; }
+.lot-page-header a { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border: 1px solid #f2cada; border-radius: 6px; color: #9d174d; background: #fff5f9; text-decoration: none; font-weight: 700; }
+.lot-page-content { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 26px; padding: 64px 0; }
+.lot-page-icon { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 24px; background: #fce7f3; color: #be185d; }
+.lot-page-content h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 750; }
+.month-state { align-self: end; display: inline-flex; align-items: center; min-height: 40px; padding: 0 12px; border-radius: 6px; background: #edf5f0; color: #246647; font-size: .8rem; font-weight: 700; }
 .month-closed { background: #edf1f5; color: #43596d; }
 .month-help,
-.month-warning { flex-basis: 100%; margin: 0; font-size: .8rem; line-height: 1.5; }
+.month-warning { grid-column: 1 / -1; margin: 0; font-size: .8rem; line-height: 1.5; }
 .month-help { color: #526a7b; }
 .month-warning { color: #896018; }
-.month-toolbar .complaint-error { flex-basis: 100%; margin: 0; }
+.month-toolbar .complaint-error { grid-column: 1 / -1; margin: 0; }
 .month-entry-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
 .month-entry-fields:disabled { opacity: .65; }
 button:disabled { cursor: not-allowed; opacity: .55; }
@@ -48,9 +57,14 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .month-summary dt { color: #526a7b; font-size: .8rem; }
 .month-summary dd { margin: 0; color: #17364c; font-weight: 750; }
 
+@media (max-width: 1050px) {
+  .month-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .month-actions { justify-self: start; }
+}
+
 @media (max-width: 760px) {
   .month-actions { width: 100%; }
-  .month-actions button { flex: 1 1 auto; }
+  .month-actions > * { flex: 1 1 auto; }
 }
 
 * {
@@ -288,8 +302,8 @@ input[type="number"] {
 
 .filters {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.15fr 1.15fr 1.05fr auto auto auto;
-  gap: 14px;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
+  gap: 12px;
   align-items: end;
   padding: 16px 20px;
   border-radius: 8px;
@@ -307,6 +321,13 @@ input[type="number"] {
   width: 100%;
   min-width: 0;
 }
+
+.filters input,
+.filters select,
+.filters > button { height: 42px; min-height: 42px; }
+.filters > button { white-space: nowrap; }
+.filter-scope { grid-column: 1 / -1; margin: 0; color: #587395; font-size: .8rem; line-height: 1.5; }
+.filters label { font-size: .82rem; }
 
 label {
   display: grid;
@@ -708,37 +729,30 @@ h2 {
 }
 
 .quality-sheet {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  grid-template-areas:
-    "pick pick date department machine reference workorder article"
-    "good scrap justified purge defects defects note note"
-    "actions actions actions actions actions actions actions actions";
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
+  gap: 16px;
   align-items: start;
 }
 
-.quality-sheet > :nth-child(1) { grid-area: pick; }
-.quality-sheet > :nth-child(2) { grid-area: date; }
-.quality-sheet > :nth-child(3) { grid-area: department; }
-.quality-sheet > :nth-child(4) { grid-area: machine; }
-.quality-sheet > :nth-child(5) { grid-area: reference; }
-.quality-sheet > :nth-child(6) { grid-area: workorder; }
-.quality-sheet > :nth-child(7) { grid-area: article; }
-.quality-sheet > :nth-child(8) { grid-area: good; }
-.quality-sheet > :nth-child(9) { grid-area: scrap; }
-.quality-sheet > :nth-child(10) { grid-area: justified; }
-.quality-sheet > :nth-child(11) { grid-area: purge; }
-.quality-sheet > :nth-child(12) { grid-area: defects; }
-.quality-sheet > :nth-child(13) { grid-area: note; }
-.quality-sheet > :nth-child(14) { grid-area: actions; }
+.quality-fields {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
 
-.quality-sheet .defect-breakdown { grid-column: 5 / span 2; grid-row: 2; }
-.quality-sheet .sheet-actions { grid-column: 1 / -1; grid-row: 3; }
+.quality-fields input,
+.quality-fields select { height: 38px; }
+.quality-measurements .quality-note { grid-column: span 3; }
+.quality-sheet .defect-breakdown { grid-column: 1 / -1; min-height: 0; }
+.quality-sheet .sheet-actions { grid-column: 1 / -1; }
 
 .quality-pick {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 300px) auto;
+  justify-content: start;
   gap: 8px;
   align-items: end;
 }
@@ -1216,17 +1230,14 @@ tbody tr:last-child td {
   }
 
   .quality-sheet {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    grid-template-areas:
-      "pick pick date department"
-      "machine reference workorder article"
-      "good scrap justified purge"
-      "defects defects note note"
-      "actions actions actions actions";
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .quality-sheet .defect-breakdown { grid-column: 1 / span 2; grid-row: 4; }
-  .quality-sheet .sheet-actions { grid-column: 1 / -1; grid-row: 5; }
+  .filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .filters > button { grid-column: 1 / -1; justify-self: end; }
+
+  .quality-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .quality-measurements .quality-note { grid-column: 1 / -1; }
 
   .sheet-actions {
     grid-column: 1 / -1;
@@ -1260,9 +1271,10 @@ tbody tr:last-child td {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .quality-sheet > * { grid-area: auto !important; }
-  .quality-sheet .defect-breakdown { grid-column: 1 / -1; grid-row: auto; }
-  .quality-sheet .sheet-actions { grid-row: auto; }
+  .quality-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .filters > button { justify-self: stretch; }
+  .quality-pick { grid-template-columns: minmax(0, 1fr); }
+  .quality-pick button { white-space: normal; }
 
   .sheet-actions {
     grid-column: 1 / -1;
@@ -1545,10 +1557,73 @@ tr:nth-child(even) td { background: #f8fafb; }
   font-size: .8rem;
 }
 
-.defect-type-legend span {
+.defect-type-legend button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.defect-type-legend button:hover { background: #eef5ff; border-color: #c5d9f4; }
+.defect-type-legend button:focus-visible,
+.defect-clickable-bar:focus-visible { outline: 2px solid #164f8e; outline-offset: 3px; }
+.defect-clickable-bar { cursor: pointer; }
+.defect-clickable-bar:hover { opacity: .82; }
+.defect-drilldown-hint { margin: 6px 0; color: #315f93; font-size: .8rem; }
+
+.defect-evolution-dialog {
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  border: 1px solid #bfd1e6;
+  border-radius: 12px;
+  background: #fff;
+  color: #09275a;
+  overflow: auto;
+}
+.defect-evolution-dialog::backdrop { background: rgba(8, 25, 48, .48); }
+.defect-evolution-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid #d5e0ee;
+  background: #f6faff;
+}
+.defect-evolution-head h2 { margin: 0; font-size: 1.15rem; }
+.defect-evolution-context { margin: 0 0 6px; color: #587395; font-size: .82rem; }
+.defect-evolution-content { padding: 16px 24px 20px; }
+.defect-evolution-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #d5e0ee;
+}
+.defect-evolution-summary dt { color: #587395; font-size: .8rem; }
+.defect-evolution-summary dd { margin: 6px 0 0; font-size: 1.5rem; font-weight: 750; }
+.defect-evolution-summary small { display: block; margin-top: 4px; color: #587395; font-size: .75rem; font-weight: 400; }
+.defect-evolution-chart { min-width: 0; }
+.defect-evolution-note { color: #587395; font-size: .8rem; line-height: 1.5; }
+.defect-evolution-footer { display: flex; justify-content: flex-end; margin-top: 18px; }
+.defect-evolution-footer button { padding: 9px 20px; border: 1px solid #cbd8e5; border-radius: 8px; background: #fff; color: #164f8e; cursor: pointer; }
+@media (max-width: 480px) {
+  .quality-fields { grid-template-columns: minmax(0, 1fr); }
+  .quality-sheet .defect-breakdown-footer { flex-wrap: wrap; }
+}
+@media (max-width: 600px) {
+  .defect-evolution-head { padding: 16px; }
+  .defect-evolution-content { padding: 12px; }
+  .defect-evolution-summary { gap: 10px; }
+  .defect-evolution-summary dd { font-size: 1.25rem; }
 }
 
 .defect-type-legend i {
