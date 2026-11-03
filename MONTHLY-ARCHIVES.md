@@ -2,6 +2,8 @@
 
 Le mois courant s'ouvre automatiquement au chargement de l'application et lors du changement de mois, même si la page reste ouverte. Le sélecteur **Mois affiché** permet de consulter les mois précédents. Un mois historique choisi manuellement reste affiché jusqu'au choix d'un autre mois ou au retour au **Mois actuel**.
 
+Le calendrier **Date à analyser** du graphique **Rebuts par jour** permet aussi de choisir directement une date d'un mois précédent. Le mois affiché suit cette date et le jour choisi reste sélectionné. **Cumul** affiche ensuite tous les jours de ce mois. Les mois futurs restent indisponibles.
+
 Aucune saisie n'est effacée au changement de mois. Tous les départements, les graphiques, la liste des saisies à compléter, les réclamations, le tri avec effectif, les affectations et l'historique utilisent le mois affiché. Les filtres supplémentaires de dates, machine, référence et OF affinent la table de production ; l'export couvre toujours le mois complet et tous les départements.
 
 ## Installation Supabase

@@ -538,7 +538,7 @@ function App() {
   useEffect(() => {
     setFilters({ ...monthBounds(selectedMonth), machine: 'Tous', reference: 'Tous', workOrder: 'Tous' });
     setForm(emptyForm());
-    setDefectParetoDate(entryDateForMonth(selectedMonth, today));
+    setDefectParetoDate((date) => date.startsWith(`${selectedMonth}-`) ? date : entryDateForMonth(selectedMonth, today));
     setComplaintChartDate('');
     setSortingChartDate('');
     setComplaintModalDate('');
@@ -1450,8 +1450,12 @@ function App() {
               </select>
             </label>
             <label>Date à analyser
-              <input type="date" value={defectParetoDate} min={selectedBounds.from} max={selectedBounds.to} onChange={(event) => {
-                setDefectParetoDate(event.target.value);
+              <input type="date" value={defectParetoDate} max={monthBounds(currentMonth).to} disabled={closingMonth} onChange={(event) => {
+                const date = event.target.value;
+                const month = date.slice(0, 7);
+                if (!/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(date) || month > currentMonth) return;
+                setMonthOverride(month === currentMonth ? null : month);
+                setDefectParetoDate(date);
                 setDefectParetoMode('j1');
               }} />
             </label>
