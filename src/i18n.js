@@ -20,6 +20,55 @@ export function readLanguage(storage) {
 // French source keys keep stored department/defect identifiers independent of display language.
 // Columns: French | English | Arabic | Simplified Chinese | Italian.
 const rows = `
+Total des rebuts du jour|Total daily scrap|إجمالي المرفوضات اليومية|当日废品总量|Totale scarti giornalieri
+Part du défaut dans les rebuts du jour|Defect share of daily scrap|نسبة العيب من المرفوضات اليومية|缺陷占当日废品比例|Quota del difetto negli scarti del giorno
+Étiquettes : pourcentage de ce défaut dans les rebuts du jour.|Labels: this defect’s percentage of daily scrap.|التسميات: نسبة هذا العيب من المرفوضات اليومية.|标签：该缺陷占当日废品的百分比。|Etichette: percentuale di questo difetto negli scarti del giorno.
+Part des rebuts totaux|Share of total scrap|النسبة من إجمالي المرفوضات|占总废品比例|Quota degli scarti totali
+{defect} sur {total} rebuts|{defect} out of {total} scrapped parts|{defect} من أصل {total} قطعة مرفوضة|总计 {total} 件废品中的 {defect} 件|{defect} su {total} pezzi scartati
+Chargement impossible|Loading failed|تعذر التحميل|加载失败|Caricamento non riuscito
+Les données LOT locales sont illisibles.|Local LOT data cannot be read.|تعذر قراءة بيانات LOT المحلية.|无法读取本地 LOT 数据。|I dati LOT locali non sono leggibili.
+Contrôle des lots|Lot inspection|مراقبة الدفعات|批次检验|Controllo lotti
+Suivi des décisions et des quantités par département.|Track decisions and quantities by department.|متابعة القرارات والكميات حسب القسم.|按部门跟踪判定和数量。|Monitoraggio di decisioni e quantità per reparto.
+Retour au tableau de bord|Back to dashboard|العودة إلى لوحة المتابعة|返回看板|Torna alla dashboard
+Gestion des contrôles de lots|Lot inspection management|إدارة مراقبة الدفعات|批次检验管理|Gestione controlli lotti
+Sauvegarde locale|Local storage|حفظ محلي|本地保存|Salvataggio locale
+Transférer {count} contrôle(s) local(aux)|Transfer {count} local inspection(s)|نقل {count} فحص محلي|传输 {count} 条本地检验|Trasferisci {count} controlli locali
+Les contrôles LOT sont conservés uniquement dans ce navigateur. Pour les partager, exécutez supabase-lot-inspections.sql dans Supabase, puis actualisez.|LOT inspections are stored only in this browser. To share them, run supabase-lot-inspections.sql in Supabase, then refresh.|تُحفظ فحوص الدفعات في هذا المتصفح فقط. لمشاركتها، نفّذ supabase-lot-inspections.sql في Supabase ثم حدّث.|LOT 检验仅保存在此浏览器。要共享，请在 Supabase 执行 supabase-lot-inspections.sql，然后刷新。|I controlli LOT sono salvati solo in questo browser. Per condividerli, esegui supabase-lot-inspections.sql in Supabase, poi aggiorna.
+Nouveau contrôle|New inspection|فحص جديد|新建检验|Nuovo controllo
+Modifier le contrôle|Edit inspection|تعديل الفحص|编辑检验|Modifica controllo
+Numéro de lot|Lot number|رقم الدفعة|批号|Numero lotto
+Quantité du lot|Lot quantity|كمية الدفعة|批次数量|Quantità lotto
+Échantillonnage|Sample size|حجم العينة|抽样数量|Campionamento
+Décision|Decision|القرار|判定|Decisione
+Défaut|Defect|العيب|缺陷|Difetto
+Défaut constaté|Observed defect|العيب المسجل|发现的缺陷|Difetto riscontrato
+Nom du qualiticien|Quality inspector name|اسم مراقب الجودة|质检员姓名|Nome del controllore qualità
+Choisir|Select|اختيار|选择|Seleziona
+OK|OK|OK|OK|OK
+NOK|NOK|NOK|NOK|NOK
+Tri|Sorting|فرز|分拣|Cernita
+Rebut|Scrap|إتلاف|报废|Scarto
+Dérogation|Concession|قبول استثنائي|让步接收|Deroga
+Modification|Editing|تعديل|编辑中|Modifica
+Saisie|Entry|إدخال|录入|Inserimento
+Modifier le lot {lot}|Edit lot {lot}|تعديل الدفعة {lot}|编辑批次 {lot}|Modifica lotto {lot}
+Aucun lot contrôlé pour ce département sur ce mois.|No lots inspected for this department this month.|لا توجد دفعات مفحوصة لهذا القسم خلال هذا الشهر.|此部门本月尚无检验批次。|Nessun lotto controllato per questo reparto nel mese.
+L’action et le défaut sont obligatoires uniquement pour une décision NOK.|Action and defect are required only for a NOK decision.|الإجراء والعيب مطلوبان فقط عند قرار NOK.|仅 NOK 判定需要填写措施和缺陷。|Azione e difetto sono obbligatori solo per una decisione NOK.
+Enregistrer le contrôle|Save inspection|حفظ الفحص|保存检验|Salva controllo
+Enregistrement…|Saving…|جارٍ الحفظ…|保存中…|Salvataggio…
+Champs à vérifier|Fields to check|حقول يجب التحقق منها|请检查字段|Campi da verificare
+Lots contrôlés|Inspected lots|الدفعات المفحوصة|已检批次|Lotti controllati
+Évolution des quantités|Quantity trends|تطور الكميات|数量趋势|Andamento quantità
+Quantité contrôlée|Inspected quantity|الكمية المفحوصة|已检数量|Quantità controllata
+Quantité conforme|Conforming quantity|الكمية المطابقة|合格数量|Quantità conforme
+Quantité bloquée|Blocked quantity|الكمية المحجوزة|冻结数量|Quantità bloccata
+Un lot OK est entièrement conforme ; un lot NOK est entièrement bloqué. L’échantillonnage est suivi séparément.|An OK lot is fully conforming; a NOK lot is fully blocked. Sample size is tracked separately.|دفعة OK مطابقة بالكامل؛ ودفعة NOK محجوزة بالكامل. يُتابَع حجم العينة بشكل منفصل.|OK 批次全部合格；NOK 批次全部冻结。抽样数量单独跟踪。|Un lotto OK è interamente conforme; un lotto NOK è interamente bloccato. Il campionamento è seguito separatamente.
+La quantité du lot doit être un entier supérieur à zéro.|Lot quantity must be a positive whole number.|يجب أن تكون كمية الدفعة عددًا صحيحًا أكبر من صفر.|批次数量必须是正整数。|La quantità del lotto deve essere un intero positivo.
+L’échantillonnage doit être compris entre 1 et la quantité du lot.|Sample size must be between 1 and the lot quantity.|يجب أن يكون حجم العينة بين 1 وكمية الدفعة.|抽样数量必须介于 1 和批次数量之间。|Il campionamento deve essere compreso tra 1 e la quantità del lotto.
+Ce lot existe déjà pour cet OF et cette référence. Modifiez le contrôle existant.|This lot already exists for this work order and reference. Edit the existing inspection.|هذه الدفعة موجودة لهذا الأمر والمرجع. عدّل الفحص الموجود.|此工单和产品编号已有该批次，请编辑已有检验。|Il lotto esiste già per questo ordine e riferimento. Modifica il controllo esistente.
+Contrôle enregistré dans Supabase.|Inspection saved in Supabase.|تم حفظ الفحص في Supabase.|检验已保存到 Supabase。|Controllo salvato in Supabase.
+Contrôle enregistré dans ce navigateur.|Inspection saved in this browser.|تم حفظ الفحص في هذا المتصفح.|检验已保存在此浏览器。|Controllo salvato in questo browser.
+Les contrôles locaux ont été transférés dans Supabase.|Local inspections were transferred to Supabase.|تم نقل الفحوص المحلية إلى Supabase.|本地检验已传输到 Supabase。|I controlli locali sono stati trasferiti in Supabase.
 LOT|LOT|LOT|LOT|LOT
 Client : {client} — production et qualité, tous départements.|Customer: {client} — production and quality, all departments.|العميل: {client} — الإنتاج والجودة في جميع الأقسام.|客户：{client} — 所有部门的生产和质量。|Cliente: {client} — produzione e qualità, tutti i reparti.
 L’export et la clôture couvrent le mois complet, tous clients confondus.|Export and closing cover the full month for all customers.|يشمل التصدير والإقفال الشهر الكامل لجميع العملاء.|导出和结账涵盖所有客户的完整月份。|Esportazione e chiusura coprono il mese completo per tutti i clienti.

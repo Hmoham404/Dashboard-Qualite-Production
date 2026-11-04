@@ -181,6 +181,12 @@ function scrapDefectEntries(row) {
     : [[row.defect_type || 'Autres', toNumber(row.scrap_qty)]];
 }
 
+function scrapQuantityForRow(row) {
+  const recordedScrap = Math.max(0, toNumber(row.scrap_qty));
+  const defectTotal = scrapDefectEntries(row).reduce((sum, [, quantity]) => sum + Math.max(0, quantity), 0);
+  return recordedScrap || defectTotal;
+}
+
 function RateDot({ cx, cy, payload, r = 6 }) {
   if (cx == null || cy == null) return null;
   const status = scrapRateStatus(toNumber(payload?.rate), toNumber(payload?.targetRate));
@@ -421,9 +427,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.lang = showLotPage ? 'en' : language;
-    document.documentElement.dir = !showLotPage && language === 'ar' ? 'rtl' : 'ltr';
-    document.title = showLotPage ? 'LOT — Coming soon' : t('Dashboard Qualite & Production');
+    document.documentElement.lang = language;
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+    document.title = showLotPage ? `${t('Contrôle des lots')} — LOT` : t('Dashboard Qualite & Production');
     try { localStorage.setItem(languageStorageKey, language); } catch { /* Storage may be disabled. */ }
   }, [language, t, showLotPage]);
 
@@ -820,11 +826,6 @@ function App() {
   const defectPareto = useMemo(() => {
     const departmentRows = monthEntries.filter((row) => row.department === activeDept);
     const defectsByDate = new Map();
-    const rejectedQuantity = (row) => {
-      const recordedScrap = Math.max(0, toNumber(row.scrap_qty));
-      const defectTotal = scrapDefectEntries(row).reduce((sum, [, quantity]) => sum + Math.max(0, quantity), 0);
-      return recordedScrap || defectTotal;
-    };
 
     if (defectParetoMode === 'j1') {
       const selectedDate = defectParetoDate;
@@ -846,7 +847,7 @@ function App() {
     }
 
     departmentRows.forEach((row) => {
-      defectsByDate.set(row.production_date, (defectsByDate.get(row.production_date) || 0) + rejectedQuantity(row));
+      defectsByDate.set(row.production_date, (defectsByDate.get(row.production_date) || 0) + scrapQuantityForRow(row));
     });
     const data = selectedDates.map((date) => ({ date, total: defectsByDate.get(date) || 0 }));
     return { data };
@@ -854,7 +855,8 @@ function App() {
 
   const machinesForDept = machines.filter((machine) => machine.department === form.department || !machine.department);
   const defectEvolution = useMemo(() => selectedDefect
-    ? buildDefectEvolution(monthEntries, selectedDefect, scrapDefectEntries) : [], [monthEntries, selectedDefect]);
+    ? buildDefectEvolution(monthEntries, selectedDefect, scrapDefectEntries, scrapQuantityForRow) : [], [monthEntries, selectedDefect]);
+  const defectEvolutionTotalScrap = useMemo(() => defectEvolution.reduce((sum, day) => sum + day.totalScrap, 0), [defectEvolution]);
 
   function openDefectEvolution(type, trigger) {
     const index = defectPareto.data.findIndex((item) => item.type === type);
@@ -1587,7 +1589,7 @@ function App() {
         {filtered.length > 3 && <div className="incomplete-actions"><button type="button" onClick={() => setShowAllProduction((current) => !current)}>{showAllProduction ? t("Afficher les 3 dernieres") : t("Afficher tout")}</button></div>}
       </Panel>
 
-      {selectedDefect && <DefectEvolutionDialog selection={selectedDefect} data={defectEvolution} monthLabel={monthLabel} locale={locale} t={t} onClose={() => setSelectedDefect(null)} />}
+      {selectedDefect && <DefectEvolutionDialog selection={selectedDefect} data={defectEvolution} totalScrap={defectEvolutionTotalScrap} monthLabel={monthLabel} locale={locale} t={t} onClose={() => setSelectedDefect(null)} />}
 
       {showHistoryWindow && (
         <div className="history-modal" role="dialog" aria-modal="true" aria-label={t("Fenetre historique des ajouts")}>
@@ -1708,7 +1710,9 @@ function App() {
         </div>
       )}
     </main>
-    {showLotPage && <LotWorkspacePage />}
+    {showLotPage && <LotWorkspacePage client={supabase} departmentOptions={departments.map((department) => department.key)} initialDepartment={activeDept}
+      initialMonth={selectedMonth} today={today} references={references.map((reference) => reference.reference)} clients={productionClients(entries)}
+      workOrders={entries.map((row) => row.work_order)} t={t} locale={locale} />}
     </>
   );
 }

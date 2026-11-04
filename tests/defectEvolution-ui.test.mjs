@@ -24,7 +24,7 @@ test('a defect opens its departmental monthly trend by bar, keyboard and legend,
     // JSDOM does not implement native modal display/focus handling.
     window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); this.querySelector('button').focus(); };
     window.HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
-    const row = (date, department, fields) => ({ id: `${date}-${department}-${JSON.stringify(fields)}`, production_date: date, department, good_qty: 100, scrap_qty: 0, note: '', ...fields });
+    const row = (date, department, fields) => ({ id: `${date}-${department}-${JSON.stringify(fields)}`, production_date: date, department, client_name: 'Client A', good_qty: 100, scrap_qty: 0, note: '', ...fields });
     const entries = [
       row('2026-10-27', 'Injection', { scrap_qty: 6, defect_breakdown: [{ type: 'Bavure', qty: 4 }, { type: 'Rayure', qty: 2 }] }),
       row('2026-10-27', 'Injection', { scrap_qty: 2, defect_type: 'Bavure' }),
@@ -32,6 +32,7 @@ test('a defect opens its departmental monthly trend by bar, keyboard and legend,
       row('2026-10-25', 'Injection', { scrap_qty: 5, defect_type: 'Rayure' }),
       row('2026-10-27', 'Assemblage', { scrap_qty: 90, defect_type: 'Bavure' }),
       row('2026-09-27', 'Injection', { scrap_qty: 50, defect_type: 'Bavure' }),
+      row('2026-10-27', 'Injection', { client_name: 'Client B', scrap_qty: 1000, defect_type: 'Bavure' }),
     ];
     localStorage.setItem('production_entries', JSON.stringify(entries));
     const source = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
@@ -50,8 +51,10 @@ test('a defect opens its departmental monthly trend by bar, keyboard and legend,
           export const ResponsiveContainer=({children})=>React.createElement('div',null,children);
           export const Bar=({shape})=>React.useContext(Rows).map((payload,index)=>shape ? React.createElement(React.Fragment,{key:index},shape({payload,x:index*40,y:0,width:30,height:100,fill:'#287fff'})) : null);
           export const Rectangle=({x,y,width,height,fill})=>React.createElement('rect',{x,y,width,height,fill});
+          export const Line=({children})=>React.createElement('g',null,children);
+          export const LabelList=({dataKey,formatter,className})=>React.useContext(Rows).map((day,index)=>React.createElement('text',{key:index,className},formatter ? formatter(day[dataKey]) : day[dataKey]));
           const Empty=()=>null;
-          export const Area=Empty,CartesianGrid=Empty,Cell=Empty,DefaultLegendContent=Empty,LabelList=Empty,Legend=Empty,Line=Empty,ReferenceLine=Empty,Tooltip=Empty,XAxis=Empty,YAxis=Empty;
+          export const Area=Empty,CartesianGrid=Empty,Cell=Empty,DefaultLegendContent=Empty,Legend=Empty,ReferenceLine=Empty,Tooltip=Empty,XAxis=Empty,YAxis=Empty;
         ` }));
       } }],
     });
@@ -61,6 +64,12 @@ test('a defect opens its departmental monthly trend by bar, keyboard and legend,
     root = createRoot(document.getElementById('root'));
     await act(async () => root.render(React.createElement(App)));
     const click = async (element) => { assert.ok(element); await act(async () => element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))); };
+    const selectClient = async (value) => act(async () => {
+      const select = document.getElementById('filter-client');
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(select, value);
+      select.dispatchEvent(new window.Event('change', { bubbles: true }));
+    });
+    await selectClient('Client A');
     await click([...document.querySelectorAll('button')].find((button) => button.textContent === 'J-1'));
     const bar = () => document.querySelector('.defect-clickable-bar[aria-label$="Bavure"]');
     const dialog = () => document.querySelector('.defect-evolution-dialog');
@@ -75,7 +84,17 @@ test('a defect opens its departmental monthly trend by bar, keyboard and legend,
     assert.equal(data[25].count, 3, 'Legacy note breakdown is included');
     assert.equal(data[24].count, 0);
     assert.equal(data[0].count, 0);
+    assert.equal(data[26].totalScrap, 8);
+    assert.equal(data[26].share, .75, 'Daily share uses daily scrap, not the monthly denominator');
+    const pointLabels = dialog().querySelectorAll('.defect-percentage-label');
+    const formatPercent = (value) => new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0 }).format(value);
+    assert.equal(pointLabels.length, 31, 'Every point, including zero days, has a percentage label');
+    assert.equal(pointLabels[26].textContent, formatPercent(.75));
+    assert.equal(pointLabels[25].textContent, formatPercent(1));
+    assert.equal(pointLabels[0].textContent, formatPercent(0));
     assert.equal(dialog().querySelector('dd').textContent, '9');
+    assert.equal(dialog().querySelector('.defect-share-value').textContent, new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 2 }).format(9 / 16));
+    assert.equal(dialog().querySelector('.defect-share small').textContent, '9 sur 16 rebuts', 'Denominator includes every defect across the month, only for this department and client');
     assert.equal(document.body.style.overflow, 'hidden');
     await click(dialog().querySelector('button'));
     assert.ok(dialog() === null, 'Close button removes the dialog');
@@ -92,6 +111,12 @@ test('a defect opens its departmental monthly trend by bar, keyboard and legend,
     await click(document.querySelector('.defect-type-legend button[aria-label$="Rayure"]'));
     assert.match(dialog().textContent, /Évolution du défaut.*Rayure/);
     assert.equal(dialog().querySelector('dd').textContent, '7');
+    assert.equal(dialog().querySelector('.defect-share small').textContent, '7 sur 16 rebuts');
+    await click(dialog().querySelector('button'));
+    await selectClient('Client B');
+    await click(bar());
+    assert.equal(dialog().querySelector('.defect-share-value').textContent, new Intl.NumberFormat('fr-FR', { style: 'percent' }).format(1));
+    assert.equal(dialog().querySelector('.defect-share small').textContent, '1 000 sur 1 000 rebuts');
     assert.deepEqual(JSON.parse(localStorage.getItem('production_entries')), entries, 'Viewing trends never changes stored records');
   } finally {
     if (root) await act(async () => root.unmount());

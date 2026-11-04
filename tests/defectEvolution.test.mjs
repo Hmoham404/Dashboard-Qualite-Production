@@ -16,11 +16,15 @@ test('defect evolution combines machines and repeated defects, without mixing de
     { production_date: '2026-10-31', department: 'Injection', defects: [['Piqûre', 4]] },
   ], selection, breakdown);
   assert.equal(data.length, 31);
-  assert.deepEqual(data[1], { date: '2026-10-02', count: 12 });
+  assert.deepEqual(data[1], { date: '2026-10-02', count: 12, totalScrap: 92, share: 12 / 92 });
   assert.equal(data[30].count, 4);
   assert.equal(data.reduce((sum, day) => sum + (day.count || 0), 0), 16);
   assert.equal(data[0].count, 0, 'Days without entries use zero to keep the curve continuous');
+  assert.equal(data[0].share, 0, 'An empty day has a finite zero percentage');
   assert.equal(data[2].count, 0, 'An entry with another defect has zero for the selected defect');
+  assert.equal(data[2].totalScrap, 10);
+  assert.equal(data[2].share, 0);
+  assert.equal(data[30].share, 1, 'A day containing only this defect is 100%');
 });
 
 test('empty months retain all calendar dates and missing defect names use Autres', () => {

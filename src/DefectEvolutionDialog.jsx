@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { CartesianGrid, ComposedChart, Line, Rectangle, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, ComposedChart, LabelList, Line, Rectangle, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { X } from 'lucide-react';
 
 export function DefectBar({ payload, onSelect, label, ...props }) {
@@ -15,7 +15,7 @@ export function DefectBar({ payload, onSelect, label, ...props }) {
   </g>;
 }
 
-export default function DefectEvolutionDialog({ selection, data, monthLabel, locale, t, onClose }) {
+export default function DefectEvolutionDialog({ selection, data, totalScrap = 0, monthLabel, locale, t, onClose }) {
   const dialogRef = useRef(null);
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -31,10 +31,13 @@ export default function DefectEvolutionDialog({ selection, data, monthLabel, loc
   }, []);
 
   const total = data.reduce((sum, day) => sum + (day.count || 0), 0);
+  const share = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 2 }).format(totalScrap > 0 ? total / totalScrap : 0);
   const peak = data.reduce((best, day) => (day.count || 0) > (best?.count || 0) ? day : best, null);
   const daysWithDefect = data.filter((day) => day.count > 0).length;
   const formatDate = (date) => new Date(`${date}T12:00:00`).toLocaleDateString(locale);
   const quantityLabel = t('Qte rebut');
+  const formatShare = (value) => new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 2 }).format(Number(value) || 0);
+  const formatPointShare = (value) => new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(Number(value) || 0);
 
   return <dialog ref={dialogRef} className="defect-evolution-dialog" aria-labelledby="defect-evolution-title"
     aria-describedby="defect-evolution-description" onCancel={onClose}
@@ -51,23 +54,37 @@ export default function DefectEvolutionDialog({ selection, data, monthLabel, loc
         <p id="defect-evolution-description" className="chart-instruction">{t('Quantité de ce défaut par jour dans le département sélectionné, sur le mois affiché.')}</p>
         <dl className="defect-evolution-summary">
           <div><dt>{t('Total du mois')}</dt><dd>{total.toLocaleString(locale)}</dd></div>
+          <div className="defect-share"><dt>{t('Part des rebuts totaux')}</dt><dd><span className="defect-share-value">{share}</span><small>{t('{defect} sur {total} rebuts', { defect: total.toLocaleString(locale), total: totalScrap.toLocaleString(locale) })}</small></dd></div>
           <div><dt>{t('Maximum journalier')}</dt><dd>{(peak?.count || 0).toLocaleString(locale)}<small>{peak ? formatDate(peak.date) : '—'}</small></dd></div>
           <div><dt>{t('Jours avec ce défaut')}</dt><dd>{daysWithDefect.toLocaleString(locale)}</dd></div>
         </dl>
         <div className="defect-evolution-chart" role="img" aria-label={t('Évolution du défaut : {defect}', { defect: t(selection.type) })}>
+          <div className="defect-evolution-chart-inner">
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={data} margin={{ top: 18, right: 20, bottom: 12, left: 0 }}>
+            <ComposedChart data={data} margin={{ top: 32, right: 28, bottom: 12, left: 0 }}>
               <CartesianGrid stroke="#dbe5f2" vertical={false} />
               <XAxis dataKey="date" minTickGap={26} tickFormatter={(date) => new Date(`${date}T12:00:00`).toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })} />
               <YAxis allowDecimals={false} domain={[0, 'auto']} tickFormatter={(value) => Number(value).toLocaleString(locale)} />
-              <Tooltip labelFormatter={formatDate} formatter={(value) => [Number(value).toLocaleString(locale), quantityLabel]} />
+              <Tooltip content={({ active, payload, label }) => {
+                const day = payload?.[0]?.payload;
+                return active && day ? <div className="chart-tooltip">
+                  <strong>{formatDate(label)}</strong>
+                  <div>{quantityLabel}: {day.count.toLocaleString(locale)}</div>
+                  <div>{t('Total des rebuts du jour')}: {day.totalScrap.toLocaleString(locale)}</div>
+                  <div>{t('Part du défaut dans les rebuts du jour')}: {formatShare(day.share)}</div>
+                </div> : null;
+              }} />
               <ReferenceLine x={selection.date} stroke="#60738b" strokeDasharray="4 4" />
               <Line type="linear" dataKey="count" name={t(selection.type)} stroke={selection.color} strokeWidth={3}
-                dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6 }} connectNulls={false} isAnimationActive={false} />
+                dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6 }} connectNulls={false} isAnimationActive={false}>
+                <LabelList className="defect-percentage-label" dataKey="share" position="top" offset={10} formatter={formatPointShare}
+                  fontSize={10} fontWeight={700} fill="#24466e" stroke="#fff" strokeWidth={3} paintOrder="stroke" />
+              </Line>
             </ComposedChart>
           </ResponsiveContainer>
+          </div>
         </div>
-        <p className="defect-evolution-note">{t('Les jours sans saisie ou sans ce défaut sont affichés à zéro.')}</p>
+        <p className="defect-evolution-note">{t('Étiquettes : pourcentage de ce défaut dans les rebuts du jour.')} {t('Les jours sans saisie ou sans ce défaut sont affichés à zéro.')}</p>
         <footer className="defect-evolution-footer"><button type="button" onClick={onClose}>{t('Fermer')}</button></footer>
       </div>
     </section>

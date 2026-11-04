@@ -32,13 +32,70 @@
 .month-actions .lot-button { display: inline-flex; align-items: center; justify-content: center; height: 40px; min-width: 76px; padding: 0 14px; border: 1px solid #db2777; border-radius: 5px; background: #db2777; color: #fff; text-decoration: none; font-weight: 800; }
 .month-actions .lot-button:hover { border-color: #be185d; background: #be185d; }
 .lot-button:focus-visible { outline: 2px solid #9d174d; outline-offset: 3px; }
-.lot-page { display: flex; flex-direction: column; min-height: 100dvh; padding: 28px clamp(20px, 5vw, 80px); background: #fff; color: #17364c; }
-.lot-page-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid #f5dce7; }
-.lot-page-header strong { display: inline-flex; align-items: center; gap: 10px; color: #be185d; letter-spacing: .08em; }
+.lot-page { display: flex; flex-direction: column; gap: 20px; min-height: 100dvh; padding: 24px clamp(16px, 3vw, 48px); background: #f4f7fa; color: #17364c; }
+.lot-page-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid #d9e3ec; }
+.lot-heading { display: flex; align-items: center; gap: 18px; }
+.lot-brand { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 14px; border-radius: 8px; background: #fce7f3; color: #be185d; font-weight: 800; letter-spacing: .06em; }
+.lot-heading h1 { margin: 0; font-size: 1.4rem; }
+.lot-heading p { margin: 5px 0 0; color: #64778c; font-size: .85rem; }
 .lot-page-header a { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border: 1px solid #f2cada; border-radius: 6px; color: #9d174d; background: #fff5f9; text-decoration: none; font-weight: 700; }
-.lot-page-content { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 26px; padding: 64px 0; }
-.lot-page-icon { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 24px; background: #fce7f3; color: #be185d; }
-.lot-page-content h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 750; }
+.lot-toolbar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+.lot-toolbar label { color: #526a7b; font-size: .82rem; }
+.lot-toolbar input, .lot-toolbar button { height: 40px; min-height: 40px; }
+.lot-storage-state { display: inline-flex; align-items: center; min-height: 40px; padding: 0 12px; border: 1px solid #e4d5b7; border-radius: 6px; color: #795d27; background: #fff8e9; font-size: .8rem; font-weight: 700; }
+.lot-storage-shared { border-color: #c6e2d3; color: #226645; background: #eef8f2; }
+.lot-storage-help { flex-basis: 100%; margin: 0; color: #64778c; font-size: .8rem; line-height: 1.6; }
+.lot-entry-panel, .lot-analysis { min-width: 0; padding: 20px; border: 1px solid #d6e1eb; border-radius: 10px; background: #fff; }
+.lot-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.lot-section-heading h2 { margin: 0; font-size: 1rem; }
+.lot-section-heading p { margin: 5px 0 0; color: #64778c; font-size: .82rem; }
+.lot-context-fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; min-width: 0; margin: 0 0 22px; padding: 0; border: 0; }
+.lot-context-fields label { min-width: 0; font-size: .82rem; }
+.lot-page input, .lot-page select { min-width: 0; width: 100%; height: 40px; min-height: 40px; padding: 0 10px; }
+.lot-table-scroll { overflow-x: auto; border: 1px solid #dce5ee; border-radius: 7px; }
+.lot-inspections-table { width: 100%; min-width: 1130px; table-layout: fixed; }
+.lot-inspections-table th { white-space: normal; font-size: .78rem; background: #f4f7fb; }
+.lot-inspections-table th:nth-child(1) { width: 22%; }
+.lot-inspections-table th:nth-child(2), .lot-inspections-table th:nth-child(3) { width: 10%; }
+.lot-inspections-table th:nth-child(4) { width: 9%; }
+.lot-inspections-table th:nth-child(5) { width: 15%; }
+.lot-inspections-table th:nth-child(6) { width: 11%; }
+.lot-inspections-table th:nth-child(7) { width: 16%; }
+.lot-inspections-table th:nth-child(8) { width: 74px; }
+.lot-inspections-table td { vertical-align: middle; white-space: normal; overflow-wrap: anywhere; }
+.lot-entry-row { background: #fffbfd; }
+.lot-row-context { display: block; margin-top: 6px; color: #6a7e94; font-size: .73rem; font-weight: 400; line-height: 1.6; }
+.lot-draft-marker { color: #93617b; font-size: .73rem; }
+.lot-page input:disabled, .lot-page select:disabled { color: #8392a4; background: #f1f4f7; }
+.lot-decision-badge { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; border-radius: 5px; font-size: .78rem; font-weight: 800; }
+.lot-page .lot-is-ok { color: #176d41; border-color: #b9ddc9; background: #eaf7ef; }
+.lot-page .lot-is-nok { color: #b02435; border-color: #f0c1c8; background: #fff0f2; }
+.lot-editing-row { outline: 2px solid #e9b3ce; outline-offset: -2px; }
+.lot-entry-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 18px; }
+.lot-entry-footer p { margin: 0; color: #64778c; font-size: .78rem; }
+.lot-entry-footer > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.lot-save-button { border-color: #be185d; background: #be185d; color: #fff; }
+.lot-feedback { margin: 16px 0 0; padding: 12px 14px; border-radius: 6px; font-size: .85rem; }
+.lot-feedback-error { border: 1px solid #efc0c7; color: #a52839; background: #fff4f5; }
+.lot-feedback-error ul { margin: 8px 0 0; padding-inline-start: 20px; }
+.lot-feedback-success { border: 1px solid #c0e1ce; color: #1d6f43; background: #eff9f3; }
+.lot-statistics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding-bottom: 20px; margin-bottom: 16px; border-bottom: 1px solid #e0e7ef; }
+.lot-statistics > div { display: grid; gap: 8px; }
+.lot-statistics span { color: #64778c; font-size: .8rem; }
+.lot-statistics strong { font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+.lot-stat-ok strong { color: #16945b; }
+.lot-stat-nok strong { color: #c73346; }
+.lot-chart-rule { margin: 0 0 14px; color: #64778c; font-size: .8rem; line-height: 1.6; }
+@media (max-width: 1000px) { .lot-context-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .lot-heading { align-items: flex-start; gap: 12px; }
+  .lot-heading h1 { font-size: 1.15rem; }
+  .lot-entry-panel, .lot-analysis { padding: 14px; }
+  .lot-context-fields, .lot-statistics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lot-entry-footer > div { width: 100%; }
+  .lot-entry-footer button { flex: 1; }
+}
+@media (max-width: 400px) { .lot-context-fields { grid-template-columns: minmax(0, 1fr); } }
 .month-state { align-self: end; display: inline-flex; align-items: center; min-height: 40px; padding: 0 12px; border-radius: 6px; background: #edf5f0; color: #246647; font-size: .8rem; font-weight: 700; }
 .month-closed { background: #edf1f5; color: #43596d; }
 .month-help,
@@ -1602,7 +1659,7 @@ tr:nth-child(even) td { background: #f8fafb; }
 .defect-evolution-content { padding: 16px 24px 20px; }
 .defect-evolution-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   margin: 20px 0;
   padding-bottom: 18px;
@@ -1611,7 +1668,8 @@ tr:nth-child(even) td { background: #f8fafb; }
 .defect-evolution-summary dt { color: #587395; font-size: .8rem; }
 .defect-evolution-summary dd { margin: 6px 0 0; font-size: 1.5rem; font-weight: 750; }
 .defect-evolution-summary small { display: block; margin-top: 4px; color: #587395; font-size: .75rem; font-weight: 400; }
-.defect-evolution-chart { min-width: 0; }
+.defect-evolution-chart { min-width: 0; overflow-x: auto; }
+.defect-evolution-chart-inner { min-width: 0; }
 .defect-evolution-note { color: #587395; font-size: .8rem; line-height: 1.5; }
 .defect-evolution-footer { display: flex; justify-content: flex-end; margin-top: 18px; }
 .defect-evolution-footer button { padding: 9px 20px; border: 1px solid #cbd8e5; border-radius: 8px; background: #fff; color: #164f8e; cursor: pointer; }
@@ -1621,8 +1679,9 @@ tr:nth-child(even) td { background: #f8fafb; }
 }
 @media (max-width: 600px) {
   .defect-evolution-head { padding: 16px; }
+  .defect-evolution-chart-inner { min-width: 760px; }
   .defect-evolution-content { padding: 12px; }
-  .defect-evolution-summary { gap: 10px; }
+  .defect-evolution-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 10px; }
   .defect-evolution-summary dd { font-size: 1.25rem; }
 }
 

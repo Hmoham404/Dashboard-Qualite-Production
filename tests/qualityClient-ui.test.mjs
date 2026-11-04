@@ -16,7 +16,7 @@ test('client filtering covers departments, charts and history; quality client su
   const otherClient = { ...row, id: 'other-client', work_order: 'OF2', good_qty: 500, scrap_qty: 40, note: 'REF_ARTICLE: ARTICLE2\nCLIENT: Autre client' };
   const welding = { ...row, id: 'welding-client', department: 'Soudure', work_order: 'OF3' };
   const otherWelding = { ...otherClient, id: 'welding-other-client', department: 'Soudure', work_order: 'OF4' };
-  const db = { tables: { production_entries: [row, otherClient, welding, otherWelding], machines: [], product_references: [], mod_assignments: [], monthly_closures: [], customer_complaints: [], sorting_hours: [] }, writes: [] };
+  const db = { tables: { production_entries: [row, otherClient, welding, otherWelding], machines: [], product_references: [], mod_assignments: [], monthly_closures: [], customer_complaints: [], sorting_hours: [], lot_inspections: [] }, writes: [] };
   const bundlePath = fileURLToPath(new URL(`.quality-client-ui-${process.pid}.mjs`, import.meta.url));
   let root;
   try {
@@ -94,11 +94,11 @@ test('client filtering covers departments, charts and history; quality client su
       window.location.hash = '#lot';
       window.dispatchEvent(new window.HashChangeEvent('hashchange'));
     });
-    assert.equal(document.querySelector('.lot-page h1').textContent, 'Coming soon');
+    assert.equal(document.querySelector('.lot-page h1').textContent, 'Contrôle des lots');
     assert.equal(document.querySelector('main.shell').hidden, true, 'LOT replaces the visible dashboard with a page');
     assert.ok(document.querySelector('dialog#lot-workspace') === null, 'LOT is not a modal');
-    assert.equal(document.title, 'LOT — Coming soon');
-    assert.equal(document.documentElement.lang, 'en');
+    assert.equal(document.title, 'Contrôle des lots — LOT');
+    assert.equal(document.documentElement.lang, 'fr');
     await act(async () => {
       window.location.hash = '';
       window.dispatchEvent(new window.HashChangeEvent('hashchange'));
