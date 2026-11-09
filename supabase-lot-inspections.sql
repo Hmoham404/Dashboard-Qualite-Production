@@ -22,6 +22,7 @@ create table if not exists public.lot_inspections (
     or (decision = 'NOK' and btrim(coalesce(defect,'')) <> '' and corrective_action is not null
       and corrective_action in ('Tri','Rebut','Dérogation')))
 );
+alter table public.lot_inspections add column if not exists anomaly_report jsonb;
 create index if not exists lot_inspections_date_department_idx on public.lot_inspections(inspection_date, department);
 alter table public.lot_inspections enable row level security;
 -- Same access roles as the current dashboard; no delete operation is exposed.

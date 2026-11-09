@@ -20,6 +20,36 @@ export function readLanguage(storage) {
 // French source keys keep stored department/defect identifiers independent of display language.
 // Columns: French | English | Arabic | Simplified Chinese | Italian.
 const rows = `
+Rapport d’anomalie|Anomaly report|تقرير عدم المطابقة|异常报告|Rapporto di anomalia
+Nouveau rapport|New report|تقرير جديد|新建报告|Nuovo rapporto
+Retour aux contrôles|Back to inspections|العودة إلى الفحوص|返回检验|Torna ai controlli
+Informations du lot|Lot information|معلومات الدفعة|批次信息|Informazioni lotto
+La référence, l’OF, la date, le département et le client sont renseignés automatiquement depuis le lot.|The reference, work order, date, department and customer are filled automatically from the lot.|يتم ملء المرجع وأمر التصنيع والتاريخ والقسم والعميل تلقائيًا من الدفعة.|产品编号、工单、日期、部门和客户根据批次自动填写。|Riferimento, ordine, data, reparto e cliente sono compilati automaticamente dal lotto.
+Décrivez la cause à l’origine de l’anomalie.|Describe the root cause of the anomaly.|صف السبب الجذري لعدم المطابقة.|请描述异常的根本原因。|Descrivi la causa all’origine dell’anomalia.
+Décrivez les mesures prises immédiatement pour contenir l’anomalie.|Describe the measures taken immediately to contain the anomaly.|صف التدابير المتخذة فورًا لاحتواء عدم المطابقة.|请描述为控制异常而立即采取的措施。|Descrivi le misure immediate adottate per contenere l’anomalia.
+Décrivez le résultat des mesures immédiates et comment il a été vérifié.|Describe the result of the immediate measures and how it was verified.|صف نتيجة التدابير الفورية وكيف تم التحقق منها.|请描述即时措施的结果及其验证方式。|Descrivi il risultato delle misure immediate e come è stato verificato.
+Décrivez les actions prévues pour éviter que l’anomalie se reproduise.|Describe the actions planned to prevent the anomaly from recurring.|صف الإجراءات المخططة لمنع تكرار عدم المطابقة.|请描述为防止异常再次发生而计划采取的措施。|Descrivi le azioni previste per evitare che l’anomalia si ripeta.
+Décrivez les résultats obtenus et les vérifications de l’efficacité.|Describe the results obtained and the checks of effectiveness.|صف النتائج المحققة والتحقق من الفعالية.|请描述取得的结果和有效性验证。|Descrivi i risultati ottenuti e le verifiche dell’efficacia.
+Cause racine|Root cause|السبب الجذري|根本原因|Causa radice
+Description de la cause racine|Root cause description|وصف السبب الجذري|根本原因说明|Descrizione della causa radice
+Action immédiate|Immediate action|الإجراء الفوري|即时措施|Azione immediata
+Description de l’action immédiate|Immediate action description|وصف الإجراء الفوري|即时措施说明|Descrizione dell’azione immediata
+Efficacité de l’action immédiate|Immediate action effectiveness|فعالية الإجراء الفوري|即时措施有效性|Efficacia dell’azione immediata
+Action corrective|Corrective action|الإجراء التصحيحي|纠正措施|Azione correttiva
+Description de l’action corrective|Corrective action description|وصف الإجراء التصحيحي|纠正措施说明|Descrizione dell’azione correttiva
+Efficacité de l’action corrective|Corrective action effectiveness|فعالية الإجراء التصحيحي|纠正措施有效性|Efficacia dell’azione correttiva
+Actions|Actions|الإجراءات|操作|Azioni
+Enregistrer le rapport|Save report|حفظ التقرير|保存报告|Salva rapporto
+Enregistrer et télécharger le PDF|Save and download PDF|حفظ وتنزيل PDF|保存并下载 PDF|Salva e scarica PDF
+Le rapport est enregistré avec le lot dans Supabase.|The report is saved with the lot in Supabase.|يُحفظ التقرير مع الدفعة في Supabase.|报告与批次一起保存在 Supabase。|Il rapporto è salvato con il lotto in Supabase.
+Le rapport est conservé dans ce navigateur avec le lot.|The report is stored with the lot in this browser.|يُحفظ التقرير مع الدفعة في هذا المتصفح.|报告与批次一起保存在此浏览器。|Il rapporto è conservato con il lotto in questo browser.
+Rapport enregistré dans Supabase.|Report saved in Supabase.|تم حفظ التقرير في Supabase.|报告已保存到 Supabase。|Rapporto salvato in Supabase.
+Rapport enregistré dans ce navigateur.|Report saved in this browser.|تم حفظ التقرير في هذا المتصفح.|报告已保存在此浏览器。|Rapporto salvato in questo browser.
+Rapport enregistré, mais le téléchargement a échoué. Réessayez.|Report saved, but download failed. Please retry.|تم حفظ التقرير لكن تعذر تنزيله. أعد المحاولة.|报告已保存，但下载失败。请重试。|Rapporto salvato, ma il download non è riuscito. Riprova.
+Pour enregistrer les rapports dans Supabase, exécutez supabase-lot-anomaly-reports.sql, puis actualisez.|To save reports in Supabase, run supabase-lot-anomaly-reports.sql, then refresh.|لحفظ التقارير في Supabase، نفّذ supabase-lot-anomaly-reports.sql ثم حدّث.|要将报告保存到 Supabase，请执行 supabase-lot-anomaly-reports.sql，然后刷新。|Per salvare i rapporti in Supabase, esegui supabase-lot-anomaly-reports.sql, poi aggiorna.
+Le contrôle a été modifié. Actualisez avant d’enregistrer le rapport.|The inspection changed. Refresh before saving the report.|تم تعديل الفحص. حدّث قبل حفظ التقرير.|检验已更改。请刷新后再保存报告。|Il controllo è stato modificato. Aggiorna prima di salvare il rapporto.
+Complétez les cinq descriptions du rapport.|Complete all five report descriptions.|أكمل الأوصاف الخمسة للتقرير.|请填写报告的五项说明。|Completa le cinque descrizioni del rapporto.
+Un nouveau rapport nécessite un lot NOK enregistré.|A new report requires a saved NOK lot.|يتطلب التقرير الجديد دفعة NOK محفوظة.|新报告需要一个已保存的 NOK 批次。|Un nuovo rapporto richiede un lotto NOK salvato.
 Total des rebuts du jour|Total daily scrap|إجمالي المرفوضات اليومية|当日废品总量|Totale scarti giornalieri
 Part du défaut dans les rebuts du jour|Defect share of daily scrap|نسبة العيب من المرفوضات اليومية|缺陷占当日废品比例|Quota del difetto negli scarti del giorno
 Étiquettes : pourcentage de ce défaut dans les rebuts du jour.|Labels: this defect’s percentage of daily scrap.|التسميات: نسبة هذا العيب من المرفوضات اليومية.|标签：该缺陷占当日废品的百分比。|Etichette: percentuale di questo difetto negli scarti del giorno.
@@ -58,7 +88,21 @@ Enregistrer le contrôle|Save inspection|حفظ الفحص|保存检验|Salva co
 Enregistrement…|Saving…|جارٍ الحفظ…|保存中…|Salvataggio…
 Champs à vérifier|Fields to check|حقول يجب التحقق منها|请检查字段|Campi da verificare
 Lots contrôlés|Inspected lots|الدفعات المفحوصة|已检批次|Lotti controllati
+Bilan du jour|Daily summary|ملخص اليوم|当日汇总|Riepilogo giornaliero
+Jour à analyser|Day to analyse|اليوم المراد تحليله|分析日期|Giorno da analizzare
+Aujourd’hui|Today|اليوم|今天|Oggi
+Nombre de lots|Number of lots|عدد الدفعات|批次数量|Numero di lotti
+Quantités des lots|Lot quantities|كميات الدفعات|批次件数|Quantità dei lotti
+Contrôlés|Inspected|المفحوصة|已检|Controllati
+Acceptés|Accepted|المقبولة|已接受|Accettati
+Rejetés|Rejected|المرفوضة|已拒收|Rifiutati
+Aucun lot contrôlé pour ce département ce jour.|No lots inspected for this department on this day.|لا توجد دفعات مفحوصة لهذا القسم في هذا اليوم.|此部门当天没有检验批次。|Nessun lotto controllato per questo reparto in questo giorno.
+Acceptés = OK ; rejetés = NOK. Les quantités portent sur les lots entiers, hors échantillonnage.|Accepted = OK; rejected = NOK. Quantities cover whole lots, excluding sample sizes.|المقبولة = OK؛ المرفوضة = NOK. تشمل الكميات الدفعات كاملة دون احتساب أحجام العينات.|接受 = OK；拒收 = NOK。数量按整批计算，不使用抽样数量。|Accettati = OK; rifiutati = NOK. Le quantità riguardano i lotti interi, senza usare il campionamento.
 Évolution des quantités|Quantity trends|تطور الكميات|数量趋势|Andamento quantità
+Évolution des blocages|Blocked quantity trend|تطور الكميات المحجوزة|冻结数量趋势|Andamento dei blocchi
+Quantité bloquée du mois|Blocked quantity this month|الكمية المحجوزة خلال الشهر|本月冻结数量|Quantità bloccata del mese
+Quantité des lots NOK par jour, du premier au dernier jour du mois. Les jours sans blocage sont affichés à zéro.|Daily NOK lot quantity from the first to the last day of the month. Days without blocked lots are shown as zero.|كمية دفعات NOK يوميًا من أول يوم إلى آخر يوم في الشهر. تُعرض الأيام دون حجز بقيمة صفر.|从月初到月末的每日 NOK 批次数量。没有冻结批次的日期显示为零。|Quantità giornaliera dei lotti NOK dal primo all’ultimo giorno del mese. I giorni senza blocchi sono visualizzati a zero.
+Aucun lot bloqué pour ce département sur ce mois.|No blocked lots for this department this month.|لا توجد دفعات محجوزة لهذا القسم خلال هذا الشهر.|此部门本月没有冻结批次。|Nessun lotto bloccato per questo reparto nel mese.
 Quantité contrôlée|Inspected quantity|الكمية المفحوصة|已检数量|Quantità controllata
 Quantité conforme|Conforming quantity|الكمية المطابقة|合格数量|Quantità conforme
 Quantité bloquée|Blocked quantity|الكمية المحجوزة|冻结数量|Quantità bloccata

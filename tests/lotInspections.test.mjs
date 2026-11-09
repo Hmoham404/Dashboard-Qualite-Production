@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { loadLotInspections, lotInspectionPayload, lotStorageKey, lotTotals, lotTrend, readLocalLots, saveLotInspection, transferLocalLots, validateLotInspection } from '../src/lotInspections.js';
+import { loadLotInspections, lotDailySummary, lotInspectionPayload, lotStorageKey, lotTotals, lotTrend, readLocalLots, saveLotInspection, transferLocalLots, validateLotInspection } from '../src/lotInspections.js';
 
 const form = { department: 'Injection', inspection_date: '2026-11-03', work_order: 'OF-1', product_reference: 'REF-1', client_name: 'Client A', lot_number: 'LOT-1', lot_qty: '100', sample_qty: '10', decision: 'OK', defect: '', corrective_action: '', inspector_name: 'Qualiticien A' };
 const storage = () => {
@@ -29,6 +29,31 @@ test('an OK lot is fully conforming and a NOK lot is fully blocked, independentl
   assert.equal(trend.length, 30);
   assert.deepEqual(trend[2], { date: '2026-11-03', controlled: 300, conforming: 100, blocked: 200 });
   assert.deepEqual(trend[0], { date: '2026-11-01', controlled: 0, conforming: 0, blocked: 0 });
+});
+
+test('daily histograms separate lot counts from whole-lot quantities and isolate date and department', () => {
+  const rows = [
+    { ...form, lot_qty: 100, sample_qty: 10 },
+    { ...form, lot_number: 'LOT-2', lot_qty: 250, sample_qty: 5, decision: 'NOK', corrective_action: 'Dérogation' },
+    { ...form, lot_number: 'LOT-3', lot_qty: 40, sample_qty: 40 },
+    { ...form, inspection_date: '2026-11-02', lot_qty: 900 },
+    { ...form, inspection_date: '2026-10-03', lot_qty: 800 },
+    { ...form, department: 'Soudure', lot_qty: 700 },
+  ];
+  assert.deepEqual(lotDailySummary(rows, '2026-11-03', 'Injection'), {
+    lots: { controlled: 3, conforming: 2, blocked: 1 },
+    quantities: { controlled: 390, conforming: 140, blocked: 250 },
+  });
+  assert.deepEqual(lotDailySummary(rows, '2026-11-04', 'Injection'), {
+    lots: { controlled: 0, conforming: 0, blocked: 0 },
+    quantities: { controlled: 0, conforming: 0, blocked: 0 },
+  });
+  assert.equal(lotDailySummary(rows, '2026-11-03', 'Soudure').quantities.controlled, 700);
+  const released = rows.map((row, index) => index === 1 ? { ...row, decision: 'OK' } : row);
+  assert.deepEqual(lotDailySummary(released, '2026-11-03', 'Injection'), {
+    lots: { controlled: 3, conforming: 3, blocked: 0 },
+    quantities: { controlled: 390, conforming: 390, blocked: 0 },
+  });
 });
 
 test('local save persists and edits a single control, and rejects duplicate lot identities', async () => {

@@ -1,96 +1,116 @@
 ﻿# Analyse du projet — Qualité & Production
 
-Revue actualisée le 3 novembre 2026. Périmètre : code local, scripts SQL, compilation et tests. Aucun accès à la base distante, aucune migration ni modification applicative. Les classeurs sources et l’interface dans un navigateur n’ont pas été audités.
+Revue actualisée le **9 novembre 2026**, pour préparer la suite du développement.
+
+Périmètre : code local, migrations SQL, modifications Git en cours, tests et compilation isolée. Aucun accès à Supabase, aucune migration appliquée, aucune modification applicative. Le contenu de `.env`, les classeurs sources, le rendu navigateur et le rendu PDF n'ont pas été examinés. Les modifications préexistantes sont conservées.
 
 ## État général
 
-Le projet fournit une base exploitable pour poursuivre le développement. La compilation réussit ; les tests des règles mensuelles, des exports et des seuils de rebut passent. Les accès aux données et la conservation des informations qualité restent prioritaires.
+Le projet dispose d'une base fonctionnelle étendue et compile. Résultat des tests : **36 tests, 28 réussites, 1 échec, 7 ignorés**. L'état réel des migrations et des droits de la base distante reste inconnu.
 
-Cette revue remplace celle du 30 octobre : l’absence de pagination, le repli silencieux des lectures Supabase vers les données initiales, l’export non raccordé et les dates mensuelles décalées ne décrivent plus le code actuel.
+Des modifications en cours concernent LOT, les rapports d'anomalie, le PDF, les traductions, les styles et les dépendances. Plusieurs nouveaux fichiers sont encore non suivis par Git et devront faire partie d'une livraison complète.
 
-## Fonctionnement et points d’entrée
+## Architecture et périmètre fonctionnel
 
-Application React 19 et Vite, avec Recharts, Lucide, SheetJS et client Supabase. Le navigateur dialogue directement avec la base ; aucun serveur applicatif distinct n’est présent dans ce dépôt.
+Application React 19 et Vite, avec accès direct à Supabase depuis le navigateur, Recharts, Lucide, SheetJS et jsPDF. Aucun serveur applicatif distinct dans le dépôt. Environnement vérifié : Node 24.14.1, npm 11.11.0 ; Vite installé : 7.3.6.
 
-Cinq départements : injection, soudure, métallisation, assemblage et sérigraphie. Fonctions : saisie production, contrôle qualité, défauts, rebuts, réclamations, tri avec effectif, affectations MOD, historique, sélection mensuelle, export Excel et clôture avec instantané. Cinq langues sont déclarées, avec RTL pour l’arabe ; certains textes restent en français.
+Cinq départements : injection, soudure, métallisation, assemblage et sérigraphie. Fonctions : production, contrôle qualité, défauts et rebuts, réclamations, tri avec effectif, affectations MOD, historique, filtre client, export Excel mensuel à cinq feuilles et clôture avec instantané.
 
-- `src/main.jsx` : interface principale, accès aux données, sauvegardes et règles métier.
-- `src/monthly.js` : dates civiles, filtrage mensuel, verrouillage local et pagination.
-- `src/monthlyExport.js` : classeur mensuel à cinq feuilles.
-- `src/scrapRate.js` : objectifs et couleurs des taux de rebut.
-- `src/i18n.js`, `src/LanguageSwitcher.jsx`, `src/LiveClock.jsx` : traduction et composants transversaux.
-- `supabase-schema.sql` et migrations : tables, politiques d’accès et archives. Documentation complémentaire : `MONTHLY-ARCHIVES.md`.
+La page `#lot` gère les contrôles OK/NOK, les actions Tri/Rebut/Dérogation, la modification et les quantités journalières. Un lot NOK peut recevoir un rapport avec cause racine, action immédiate, action corrective et leurs efficacités. La sauvegarde précède le téléchargement PDF. Les contrôles LOT et leurs rapports sont indépendants des archives et exports mensuels de production.
 
-Sans Supabase, le mode local reste partiel : production et clôtures utilisent localStorage ; sauvegarde qualité, réclamations et heures de tri exigent Supabase. La présence d’une configuration ne prouve pas que la connexion distante fonctionne.
+Cinq langues sont déclarées : français, anglais, arabe, italien et chinois, avec RTL pour l'arabe. Certains textes restent en français.
+
+### Points d'entrée
+
+- `src/main.jsx` : tableau de bord, formulaires, graphiques et opérations de données ; environ 104 ko et de nombreuses responsabilités regroupées.
+- `src/monthly.js`, `src/monthlyExport.js` : calendrier civil, pagination, archives locales et classeur mensuel.
+- `src/qualityNote.js`, `src/productionFilters.js` : métadonnées qualité historiques et filtre client.
+- `src/scrapRate.js`, `src/defectEvolution.js`, `src/DefectEvolutionDialog.jsx` : objectifs et évolution des défauts.
+- `src/LotWorkspacePage.jsx`, `src/lotInspections.js` : interface LOT, validation, stockage et transfert.
+- `src/AnomalyReportPage.jsx`, `src/anomalyReports.js`, `src/anomalyReportPdf.js` : formulaire, sauvegarde et génération PDF.
+- `src/i18n.js`, `src/styles.css` : traductions et styles partagés.
+- `supabase-*.sql`, `LOT.md`, `MONTHLY-ARCHIVES.md` : schéma, migrations et documentation métier.
+
+### Configuration et mode local
+
+Variables attendues : `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY`, documentées dans `.env.example`. Leur présence ne prouve pas la connexion distante.
+
+Sans Supabase, production et clôtures utilisent localStorage ; les sauvegardes qualité, réclamations et tri exigent Supabase (`src/main.jsx:694`, `:735`, `:1020`). LOT dispose de son propre mode local, aussi utilisé si sa table manque. Une erreur réseau sur une table LOT existante ne déclenche pas silencieusement ce repli.
 
 ## Constats prioritaires
 
-### P1 — Droits anonymes dans les scripts SQL
+### P1 — Accès anonymes ouverts dans les scripts SQL
 
-Preuves : `supabase-schema.sql:93–123` et `supabase-monthly-archives.sql:90`.
+Preuves : `supabase-schema.sql:93–123`, `supabase-lot-inspections.sql:33–41`, `supabase-monthly-archives.sql:54–90`.
 
-Les politiques utilisent `using (true)` et `with check (true)`. La fonction `close_production_month`, déclarée `security definer`, est exécutable par `anon` : un client anonyme peut clôturer un mois terminé si cette migration est déployée. Les opérations possibles sur les tables dépendent aussi des droits SQL actifs. Aucun parcours d’authentification n’a été trouvé ; les droits réellement déployés restent inconnus.
+Les politiques utilisent largement `using (true)` et `with check (true)`. LOT accorde explicitement lecture, insertion et modification à `anon` et `authenticated`. La fonction de clôture, déclarée `security definer`, est exécutable par ces deux rôles. Aucun parcours d'authentification utilisateur n'a été trouvé.
 
-Action : définir les rôles métier, restreindre les politiques et l’exécution de la clôture, puis tester les accès autorisés et refusés sur une base isolée.
+Ces scripts prévoient un accès anonyme étendu s'ils sont déployés ainsi ; les droits effectivement installés restent inconnus. Avant exposition en production partagée : définir les rôles métier, adapter les politiques et la clôture, puis tester les accès autorisés et refusés sur une base isolée.
 
-### P1 — Une reprise production efface les informations qualité
+### P1 — Une édition de lot peut écraser un rapport plus récent
 
-Preuve : `src/main.jsx:964–1002`, fonction `saveProductionService`.
+Preuves : `src/lotInspections.js:26–33`, `:82–99`, `src/anomalyReports.js:42–54`.
 
-Le payload force `note: ''` et le statut « Qualité à compléter », même pour une ligne existante. La référence article et les observations sont encodées dans cette note : une modification production les efface. La colonne dédiée aux défauts reste dans le payload ; les informations présentes uniquement dans la note disparaissent.
+La sauvegarde d'un rapport compare `updated_at` et ne modifie que le rapport et son horodatage. La modification d'un contrôle LOT envoie en revanche une ligne complète, avec son ancienne copie éventuelle du rapport, sans comparer la version. Un onglet ou poste resté sur une ancienne version peut donc remplacer un rapport modifié entre-temps. Le transfert local utilise aussi un upsert complet ; son comportement concurrent doit être défini.
 
-Action : préserver les informations qualité existantes et représenter séparément une éventuelle demande de revalidation.
+Reproduction **confirmée en mémoire** : création du lot et du rapport, modification de la cause depuis une première copie, puis modification de l'échantillon depuis une copie ancienne ; l'ancienne cause remplace la nouvelle. Aucune donnée réelle utilisée. Le chemin distant présente le même risque à la lecture du code, sans avoir été exécuté contre Supabase.
 
-### P2 — Le type « qualité seule » disparaît à la modification
+Action : vérifier la version lors des modifications de contrôle et limiter les champs écrits. Tester le conflit entre édition du lot et édition du rapport, ainsi que le transfert local.
 
-Preuves : `src/main.jsx:153`, `:938` et `:1034`.
+### P2 — Traductions incomplètes et test en échec
 
-`extractQualityNote` retire le marqueur `SAISIE_QUALITE_SEULE`. L’édition utilise cette note nettoyée, puis la sauvegarde ne réintroduit le marqueur que pour une nouvelle ligne sans identifiant. Une ligne qualité seule modifiée peut perdre son exemption de validation production et redevenir incomplète.
+Preuves : `tests/i18n.test.mjs:33`, `src/main.jsx:1404–1440`.
 
-Le calcul de la liste des lignes incomplètes utilise désormais `completionStatus` (`:859`) : l’ancien défaut de classement n’est plus présent sous la même forme.
+Le contrôle JSX échoue sur « Target du département : ». D'autres textes du graphique, des réclamations et des fenêtres restent écrits directement en français. La complétude des dictionnaires passe, mais le contrôle JSX actuel ne parcourt que `main.jsx`.
 
-Action : conserver explicitement le type de saisie et centraliser le calcul du statut.
+Action : traduire textes et attributs restants puis étendre la vérification aux composants concernés, en préservant les valeurs métier des options.
 
-### P2 — Traductions incomplètes
+### P2 — Tests partiellement reproductibles
 
-Le test `tests/i18n.test.mjs:33` échoue sur le texte JSX brut « Target du département : ». Plusieurs sections réclamations, tri et fenêtres contiennent aussi des textes français directs.
+`package.json` propose `dev`, `build` et `preview`, sans commande de test ni lint. Les tests utilisent Babel et esbuild via des dépendances transitives. jsdom et PGlite sont absents, et `JSDOM_MODULE` / `PGLITE_MODULE` ne sont pas configurés pour cette exécution.
 
-Action : compléter les dictionnaires et appliquer `t()` aux textes et attributs concernés.
+Les 7 tests ignorés concernent **3 tests SQL et 4 tests d'interface**. Une compilation réussie ne valide pas ces parcours.
 
-### P2 — Import Excel inaccessible
+Action : déclarer les dépendances de test et fournir des commandes reproductibles pour les tests métier, interface et SQL.
 
-`importExcel` est défini à `src/main.jsx:1174`, mais aucun appel depuis l’interface ni champ de fichier associé n’a été trouvé. L’export mensuel est désormais raccordé (`:1243`) et sa structure est testée.
+### P2 — Hygiène du dépôt
 
-Action : exposer l’import selon le besoin métier, avec validation des colonnes, aperçu et gestion d’erreur.
+Git suit **13 131 fichiers de `node_modules`**, trois fichiers de `dist` et `.env`. Aucun `.gitignore` à la racine. Le contenu de `.env` n'a pas été examiné : ce constat ne démontre pas la présence d'un secret privilégié.
 
-## Progrès vérifiés
+Action : préparer un nettoyage Git conservant les fichiers locaux, ignorer dépendances, sorties de build et configuration locale, puis vérifier les types de clés avant publication. Préserver les modifications en cours.
 
-- `loadTable` utilise `readAllRows` avec Supabase et laisse remonter les erreurs. Une table distante vide reste vide.
-- La pagination couvre les tables principales, réclamations, tri et métadonnées de clôture ; ses tests passent.
-- Les fonctions de dates civiles et le test au fuseau Africa/Lagos passent.
-- Les indicateurs principaux utilisent les lignes du mois sélectionné. Les filtres supplémentaires affinent la table, conformément à `MONTHLY-ARCHIVES.md`.
-- L’export mensuel conserve les en-têtes pour un mois vide et distingue effectif inconnu et effectif nul.
-- La migration d’archives prévoit une transaction, des verrous et des déclencheurs sur quatre tables datées. Son exécution réelle n’a pas été vérifiée pendant cette revue.
+### P3 — Import Excel et maintenabilité
 
-## Maintenabilité
+`importExcel` existe (`src/main.jsx:1188`), sans appel d'interface ni champ de fichier associé trouvé. Les deux classeurs présents à la racine n'ont pas été analysés.
 
-- `src/main.jsx` concentre formulaires, graphiques, règles métier et opérations de données. Extraire d’abord sauvegardes et validations facilitera les correctifs ciblés.
-- Chaque changement de mois recharge les historiques complets avant filtrage local. Ajouter des filtres serveur et des agrégats lorsque le volume le justifie.
-- Le bundle principal mesure 1 311,95 kB, soit 377,94 kB gzip. Vite signale sa taille ; le chargement différé d’Excel et des vues est une piste à mesurer.
-- Git suit 13 131 fichiers de `node_modules`, ainsi que `dist` et `.env`, sans `.gitignore` à la racine. Le contenu de `.env` n’a pas été affiché ni évalué.
-- `package.json` ne fournit ni commande de test ni lint. Les tests utilisent Babel et esbuild comme dépendances transitives. Les paquets optionnels jsdom et PGlite sont absents du projet.
+Le bundle principal compilé mesure **1 368,60 ko**, soit **395,11 ko gzip** ; Vite signale sa taille. jsPDF est déjà importé dynamiquement. Excel et les vues principales sont des pistes de découpage. Plusieurs chargements relisent les historiques complets avant filtrage local.
 
-## Vérification du 3 novembre 2026
+Action : confirmer le besoin d'import avant de le raccorder avec aperçu et validation ; extraire progressivement sauvegardes et règles métier de `main.jsx`, puis mesurer les volumes et le chargement avant optimisation.
 
-- `node --test tests/*.test.mjs` : **18 tests, 15 réussites, 1 échec, 2 ignorés**. Échec de traduction décrit ci-dessus. Tests SQL et interface ignorés car `PGLITE_MODULE` et `JSDOM_MODULE` ne sont pas définis ; les paquets correspondants sont absents.
-- `node node_modules/vite/bin/vite.js build --outDir .analysis-build` : **réussite**, avertissement de taille. Premier essai limité par les permissions du bac à sable ; compilation autorisée réussie. Sortie isolée puis supprimée, sans remplacer `dist`.
-- Les constats de sauvegarde et de droits SQL résultent d’une lecture statique du code. Aucun correctif fonctionnel ni contrôle de la base distante n’a été réalisé.
+## Corrections déjà présentes depuis l'analyse du 3 novembre
 
-## Ordre de travail proposé
+Deux anciens constats ne décrivent plus le code actuel :
 
-1. Préserver les notes et le type de saisie lors des modifications production et qualité, avec tests ciblés.
-2. Définir les rôles et sécuriser les accès Supabase et la clôture avant exposition en production.
-3. Corriger les traductions et rendre les tests reproductibles via les scripts du projet.
-4. Raccorder l’import selon le besoin, extraire les modules et réduire le chargement initial.
+- La modification production préserve la note enregistrée (`src/main.jsx:1003`), donc référence article, client et observations encodés dans cette note. Elle remet encore explicitement la ligne en attente qualité ; cette règle reste à confirmer avec le fonctionnement métier attendu.
+- La sauvegarde qualité réintroduit le marqueur « qualité seule » pour une ligne existante qui le possède (`src/main.jsx:1048`).
 
-Démarrage : `npm run dev`. Vérifications : `node --test tests/*.test.mjs` puis `npm run build`.
+Restent également présents : pagination et remontée des erreurs de lecture, dates civiles, export mensuel stable même pour un mois vide, distinction entre effectif inconnu et nul, filtre client, évolution des défauts et validations LOT. Les tests métier correspondants passent.
+
+## Vérifications du 9 novembre 2026
+
+- `node --test tests/*.test.mjs` : **36 tests, 28 réussites, 1 échec, 7 ignorés**. Échec de traduction ; tests optionnels non exécutés faute des modules configurés.
+- Compilation standard vers `tmp/project-review-build-2026-11-09` : premier essai bloqué par les permissions de lecture du chargeur de configuration esbuild.
+- `node node_modules/vite/bin/vite.js build --configLoader native --outDir tmp/project-review-build-2026-11-09` : **réussite**, 2 565 modules transformés, avertissement de taille. Le chargeur natif évite cette limitation sans élargir les permissions ni modifier la configuration. `dist` n'a pas été remplacé.
+- Reproduction du conflit LOT : **confirmée en stockage mémoire isolé**, sans écriture de données applicatives.
+
+Limites : aucun contrôle navigateur, rendu PDF, test SQL exécuté ou accès distant ; aucun audit des classeurs ni du contenu de `.env`.
+
+## Ordre de travail conseillé
+
+1. Rendre les tests reproductibles et corriger les traductions en échec pour établir une référence fiable.
+2. Protéger les modifications LOT contre les conflits, avec un test de non-régression sur les rapports.
+3. Définir les rôles métier et sécuriser Supabase avant exposition partagée en production.
+4. Nettoyer le suivi Git en préservant les fichiers locaux et inclure tous les nouveaux fichiers nécessaires aux rapports.
+5. Vérifier visuellement LOT et les PDF, puis traiter la prochaine fonctionnalité ; extraire progressivement les responsabilités de `main.jsx`.
+
+Démarrage : `npm run dev`. Tests actuels : `node --test tests/*.test.mjs`. Compilation standard : `npm run build` ; dans le bac à sable observé, employer le chargeur natif comme indiqué ci-dessus.

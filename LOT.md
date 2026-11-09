@@ -15,9 +15,27 @@ Renseigner en haut le département, l’OF, la date de contrôle, la référence
 
 Le tableau et le graphique montrent les contrôles enregistrés du département et du mois sélectionnés. Les autres champs du haut renseignent le contrôle en cours ; les OF, références, clients et dates des contrôles enregistrés sont rappelés sous leur numéro de lot.
 
+## Rapports d’anomalie
+
+Pour un contrôle NOK, **Rapport d’anomalie** apparaît directement dans la colonne **Actions**, dès le choix NOK dans la ligne de saisie et sur les contrôles NOK enregistrés. Ce bouton ouvre une page dédiée. Dans la ligne en cours, il enregistre d’abord le contrôle, puis ouvre le rapport ; les mêmes validations de lot restent applicables.
+
+La référence, l’OF, la date, le département, le client, le numéro de lot, le défaut et le qualiticien sont repris automatiquement. Compléter la cause racine, l’action immédiate, son efficacité, l’action corrective et son efficacité. **Enregistrer le rapport** permet de reprendre le document plus tard. **Enregistrer et télécharger le PDF** conserve d’abord le rapport, puis télécharge le fichier. Si le téléchargement échoue, le rapport enregistré reste disponible.
+
+Les cinq descriptions sont des champs libres obligatoires, avec une indication du contenu attendu. Les efficacités se décrivent séparément des actions. En cas de champ manquant, il est signalé et le premier champ à compléter reçoit le focus ; les informations du lot restent préremplies en lecture seule.
+
+Un rapport est conservé dans `lot_inspections.anomaly_report` (ou avec le lot dans le stockage local). Son identité et ses informations initiales sont préservées lors des modifications ; un passage ultérieur du lot à OK conserve le rapport et son accès. Une sauvegarde de rapport partagé ne réécrit pas les quantités du lot et vérifie que le contrôle n’a pas été modifié depuis son ouverture.
+
+Pour une base existante, exécuter `supabase-lot-anomaly-reports.sql` après la migration LOT. Ce script ajoute la colonne et valide les rapports sans supprimer les lots existants. Les rapports font partie du transfert des contrôles locaux. Le PDF utilise la police libre Noto Sans (licence dans `src/assets/fonts/OFL.txt`) pour les textes français et leurs accents.
+
 ## Graphique
 
+Deux histogrammes **Bilan du jour**, placés au-dessus du formulaire, affichent le département sélectionné : le **nombre de lots** contrôlés, acceptés (OK) et rejetés (NOK), puis les **quantités des lots** correspondantes. Chaque contrôle enregistré compte pour un lot ; les quantités additionnent les lots entiers, sans utiliser l’échantillonnage. Une dérogation reste comptée en NOK tant que la décision n’est pas explicitement modifiée.
+
+Le jour actuel est sélectionné par défaut dans le mois courant. **Jour à analyser** permet de consulter une autre date du mois affiché, indépendamment de la date du formulaire ; **Aujourd’hui** revient au jour et au mois actuels. Un mois historique commence au premier jour du mois. Les histogrammes se mettent à jour après enregistrement, modification ou transfert des contrôles. Un jour sans contrôle affiche zéro et un message explicite. Les totaux et la courbe mensuels restent disponibles sous le formulaire.
+
 Les courbes journalières additionnent les quantités des lots : quantité contrôlée = lots OK + lots NOK ; quantité conforme = lots OK ; quantité bloquée = lots NOK. L’échantillonnage ne sert pas à extrapoler un taux de défaut. Les jours sans contrôle sont affichés à zéro pour conserver une courbe continue.
+
+Directement sous le tableau et son formulaire, **Évolution des blocages** affiche une courbe rouge dédiée à la quantité des lots NOK de chaque jour du mois affiché, pour le département sélectionné. Le mois courant est affiché par défaut ; les mois précédents restent consultables. Tous les jours, du premier au dernier, sont affichés sur l’axe horizontal, y compris les jours sans blocage à zéro. Sur petit écran, le graphique défile horizontalement pour conserver tous les jours lisibles. Le total mensuel et les valeurs positives sont indiqués ; une modification NOK vers OK retire la quantité du jour concerné. Il s’agit des décisions actuellement enregistrées par date de contrôle, pas d’un historique des changements de statut ni d’un stock cumulé.
 
 ## Supabase et stockage local
 

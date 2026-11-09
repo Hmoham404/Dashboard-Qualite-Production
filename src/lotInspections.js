@@ -29,7 +29,8 @@ export function lotInspectionPayload(form, existing = null) {
   return { ...payload, id: existing?.id || globalThis.crypto.randomUUID(), lot_qty: Number(form.lot_qty), sample_qty: Number(form.sample_qty),
     decision: form.decision, defect: form.decision === 'NOK' ? form.defect.trim() : null,
     corrective_action: form.decision === 'NOK' ? form.corrective_action : null,
-    created_at: existing?.created_at || new Date().toISOString(), updated_at: new Date().toISOString() };
+    created_at: existing?.created_at || new Date().toISOString(), updated_at: new Date().toISOString(),
+    ...(existing?.anomaly_report ? { anomaly_report: existing.anomaly_report } : {}) };
 }
 
 export function sameLot(a, b) {
@@ -44,6 +45,18 @@ export function lotTotals(rows) {
     if (row.decision === 'NOK') totals.blocked += quantity;
     return totals;
   }, { controlled: 0, conforming: 0, blocked: 0 });
+}
+
+export function lotDailySummary(rows, date, department) {
+  const daily = rows.filter((row) => row.inspection_date === date && row.department === department);
+  return {
+    lots: {
+      controlled: daily.length,
+      conforming: daily.filter((row) => row.decision === 'OK').length,
+      blocked: daily.filter((row) => row.decision === 'NOK').length,
+    },
+    quantities: lotTotals(daily),
+  };
 }
 
 export function lotTrend(rows, month) {

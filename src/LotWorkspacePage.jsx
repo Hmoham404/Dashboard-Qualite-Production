@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CheckCircle2, Edit3, Package, PlusCircle, RefreshCcw, Save, ShieldAlert } from 'lucide-react';
-import { CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { ArrowLeft, CheckCircle2, Edit3, FileText, Package, PlusCircle, RefreshCcw, Save, ShieldAlert } from 'lucide-react';
+import { CartesianGrid, ComposedChart, LabelList, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { entryDateForMonth, localDateKey, monthBounds } from './monthly.js';
-import { loadLotInspections, lotActions, lotInspectionPayload, lotTotals, lotTrend, sameLot, saveLotInspection, transferLocalLots, validateLotInspection } from './lotInspections.js';
+import { loadLotInspections, lotActions, lotDailySummary, lotInspectionPayload, lotTotals, lotTrend, sameLot, saveLotInspection, transferLocalLots, validateLotInspection } from './lotInspections.js';
+import AnomalyReportPage from './AnomalyReportPage.jsx';
+import LotDailyHistograms from './LotDailyHistograms.jsx';
 
 function blankInspection(department, date, context = {}) {
   return { department, inspection_date: date, work_order: '', product_reference: '', client_name: '', lot_number: '',
@@ -10,8 +12,9 @@ function blankInspection(department, date, context = {}) {
 }
 
 export default function LotWorkspacePage({ client = null, departmentOptions = [], initialDepartment = 'Injection', initialMonth,
-  today = localDateKey(), references = [], clients = [], workOrders = [], t = (value) => value, locale = 'fr-FR' }) {
+  today = localDateKey(), references = [], clients = [], workOrders = [], t = (value) => value, locale = 'fr-FR', downloadReport }) {
   const [month, setMonth] = useState(initialMonth || today.slice(0, 7));
+  const [analysisDateOverride, setAnalysisDateOverride] = useState(null);
   const [form, setForm] = useState(() => blankInspection(initialDepartment, entryDateForMonth(initialMonth || today.slice(0, 7), today)));
   const [rows, setRows] = useState([]);
   const [pending, setPending] = useState([]);
@@ -23,8 +26,10 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
   const [error, setError] = useState('');
   const [missingFields, setMissingFields] = useState([]);
   const [notice, setNotice] = useState('');
+  const [reportLot, setReportLot] = useState(null);
   const lotNumberRef = useRef(null);
   const bounds = monthBounds(month);
+  const analysisDate = analysisDateOverride || entryDateForMonth(month, today);
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString(locale, { month: 'long', year: 'numeric' });
   const formatDate = (date) => new Date(`${date}T12:00:00`).toLocaleDateString(locale);
   const busy = saving || transferring || mode === 'loading';
@@ -47,15 +52,22 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
     .sort((a, b) => b.inspection_date.localeCompare(a.inspection_date) || String(b.created_at).localeCompare(String(a.created_at))), [rows, form.department, month]);
   const totals = useMemo(() => lotTotals(visibleRows), [visibleRows]);
   const trend = useMemo(() => lotTrend(visibleRows, month), [visibleRows, month]);
+  const dailySummary = useMemo(() => lotDailySummary(rows, analysisDate, form.department), [rows, analysisDate, form.department]);
   const clientSuggestions = [...new Set([...clients, ...rows.map((row) => row.client_name)].filter(Boolean))].sort();
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+
+  function selectMonth(value) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value) || value > today.slice(0, 7)) return;
+    setMonth(value); setAnalysisDateOverride(null);
+    setForm(blankInspection(form.department, entryDateForMonth(value, today))); setEditingId(null); setMissingFields([]); setNotice('');
+  }
 
   function newInspection() {
     setForm(blankInspection(form.department, entryDateForMonth(month, today)));
     setEditingId(null); setMissingFields([]); setError(''); setNotice('');
   }
 
-  async function saveInspection(event) {
+  async function saveInspection(event, openReport = false) {
     event.preventDefault();
     if (!canSave) return;
     const invalid = validateLotInspection(form);
@@ -75,6 +87,7 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
       setForm(blankInspection(form.department, form.inspection_date, { work_order: form.work_order, product_reference: form.product_reference,
         client_name: form.client_name, inspector_name: form.inspector_name }));
       setNotice(mode === 'remote' ? 'Contrôle enregistré dans Supabase.' : 'Contrôle enregistré dans ce navigateur.');
+      if (openReport) setReportLot(saved);
     } catch (cause) {
       setError(cause.code === '23505' ? 'Ce lot existe déjà pour cet OF et cette référence. Modifiez le contrôle existant.' : cause.message);
     } finally { setSaving(false); }
@@ -97,6 +110,10 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
     } catch (cause) { setError(cause.message); } finally { setTransferring(false); }
   }
 
+  if (reportLot) return <AnomalyReportPage lot={reportLot} client={client} mode={mode} t={t} locale={locale}
+    downloadReport={downloadReport}
+    onBack={() => setReportLot(null)} onSaved={(saved) => { setRows((current) => current.map((row) => row.id === saved.id ? saved : row)); setReportLot(saved); }} />;
+
   return <main className="lot-page">
     <header className="lot-page-header">
       <div className="lot-heading"><span className="lot-brand"><Package size={20} />LOT</span><div><h1>{t('Contrôle des lots')}</h1><p>{t('Suivi des décisions et des quantités par département.')}</p></div></div>
@@ -104,16 +121,18 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
     </header>
 
     <section className="lot-toolbar" aria-label={t('Gestion des contrôles de lots')}>
-      <label>{t('Mois affiché')}<input id="lot-month" type="month" max={today.slice(0, 7)} value={month} disabled={busy} onChange={(event) => {
-        const value = event.target.value;
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value) || value > today.slice(0, 7)) return;
-        setMonth(value); setForm(blankInspection(form.department, entryDateForMonth(value, today))); setEditingId(null); setMissingFields([]); setNotice('');
-      }} /></label>
+      <label>{t('Mois affiché')}<input id="lot-month" type="month" max={today.slice(0, 7)} value={month} disabled={busy} onChange={(event) => selectMonth(event.target.value)} /></label>
       <span className={`lot-storage-state ${mode === 'remote' ? 'lot-storage-shared' : ''}`}>{t(mode === 'remote' ? 'Connecte a Supabase' : mode === 'loading' ? 'Chargement des données…' : mode === 'error' ? 'Chargement impossible' : 'Sauvegarde locale')}</span>
       <button type="button" disabled={busy} onClick={() => setReloadCount((value) => value + 1)}><RefreshCcw size={16} />{t('Actualiser')}</button>
       {pending.length > 0 && mode === 'remote' && <button type="button" disabled={busy} onClick={transferInspections}>{t('Transférer {count} contrôle(s) local(aux)', { count: pending.length })}</button>}
       {['local', 'missing'].includes(mode) && <p className="lot-storage-help">{t('Les contrôles LOT sont conservés uniquement dans ce navigateur. Pour les partager, exécutez supabase-lot-inspections.sql dans Supabase, puis actualisez.')}</p>}
     </section>
+
+    <LotDailyHistograms summary={dailySummary} date={analysisDate} month={month} today={today} department={form.department} bounds={bounds} mode={mode} t={t} locale={locale}
+      onDateChange={(date) => {
+        if (date >= bounds.from && date <= bounds.to && date <= today) setAnalysisDateOverride(date);
+      }}
+      onToday={() => { if (month !== today.slice(0, 7)) selectMonth(today.slice(0, 7)); else setAnalysisDateOverride(null); }} />
 
     <form className="lot-entry-panel" onSubmit={saveInspection} noValidate>
       <div className="lot-section-heading"><h2>{t(editingId ? 'Modifier le contrôle' : 'Nouveau contrôle')}</h2>{editingId && <button type="button" disabled={busy} onClick={newInspection}><PlusCircle size={16} />{t('Nouveau contrôle')}</button>}</div>
@@ -129,7 +148,7 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
       <datalist id="lot-clients">{clientSuggestions.map((value) => <option key={value} value={value} />)}</datalist>
       <div className="lot-table-scroll">
         <table className="lot-inspections-table">
-          <thead><tr>{['Numéro de lot', 'Quantité du lot', 'Échantillonnage', 'Décision', 'Défaut', 'Action', 'Nom du qualiticien', 'Modifier'].map((label) => <th key={label} scope="col">{t(label)}</th>)}</tr></thead>
+          <thead><tr>{['Numéro de lot', 'Quantité du lot', 'Échantillonnage', 'Décision', 'Défaut', 'Action', 'Nom du qualiticien', 'Actions'].map((label) => <th key={label} scope="col">{t(label)}</th>)}</tr></thead>
           <tbody>
             <tr className="lot-entry-row">
               <td><input ref={lotNumberRef} id="lot-number" aria-label={t('Numéro de lot')} value={form.lot_number} disabled={!canSave} onChange={(event) => update('lot_number', event.target.value)} /></td>
@@ -139,14 +158,16 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
               <td><input id="lot-defect" aria-label={t('Défaut')} value={form.defect} disabled={!canSave || form.decision !== 'NOK'} placeholder={form.decision === 'OK' ? '—' : t('Défaut constaté')} onChange={(event) => update('defect', event.target.value)} /></td>
               <td><select id="lot-action" aria-label={t('Action')} value={form.corrective_action} disabled={!canSave || form.decision !== 'NOK'} onChange={(event) => update('corrective_action', event.target.value)}><option value="">{form.decision === 'NOK' ? t('Choisir') : '—'}</option>{lotActions.map((action) => <option key={action} value={action}>{t(action)}</option>)}</select></td>
               <td><input id="lot-inspector" aria-label={t('Nom du qualiticien')} value={form.inspector_name} disabled={!canSave} onChange={(event) => update('inspector_name', event.target.value)} /></td>
-              <td className="lot-draft-marker">{t(editingId ? 'Modification' : 'Saisie')}</td>
+              <td><div className="lot-draft-actions"><span className="lot-draft-marker">{t(editingId ? 'Modification' : 'Saisie')}</span>{form.decision === 'NOK' && <button className="lot-anomaly-button" type="button" disabled={!canSave} onClick={(event) => saveInspection(event, true)}><FileText size={15} />{t('Rapport d’anomalie')}</button>}</div></td>
             </tr>
             {visibleRows.map((row) => <tr key={row.id} className={row.id === editingId ? 'lot-editing-row' : ''}>
               <td><strong>{row.lot_number}</strong><small className="lot-row-context">{formatDate(row.inspection_date)} · {row.work_order}<br />{row.product_reference} · {row.client_name}</small></td>
               <td>{row.lot_qty.toLocaleString(locale)}</td><td>{row.sample_qty.toLocaleString(locale)}</td>
               <td><span className={`lot-decision-badge ${row.decision === 'OK' ? 'lot-is-ok' : 'lot-is-nok'}`}>{row.decision === 'OK' ? <CheckCircle2 size={15} /> : <ShieldAlert size={15} />}{row.decision}</span></td>
               <td>{row.defect || '—'}</td><td>{row.corrective_action ? t(row.corrective_action) : '—'}</td><td>{row.inspector_name}</td>
-              <td><button type="button" className="icon-only" disabled={!canSave} onClick={() => editInspection(row)} aria-label={t('Modifier le lot {lot}', { lot: row.lot_number })}><Edit3 size={17} /></button></td>
+              <td><div className="lot-row-actions"><button type="button" className="icon-only" disabled={!canSave} onClick={() => editInspection(row)} aria-label={t('Modifier le lot {lot}', { lot: row.lot_number })}><Edit3 size={17} /></button>
+                {(row.decision === 'NOK' || row.anomaly_report) && <button type="button" className="lot-anomaly-button" disabled={!canSave} onClick={() => setReportLot(row)}><FileText size={15} />{t('Rapport d’anomalie')}</button>}
+              </div></td>
             </tr>)}
             {!visibleRows.length && <tr><td colSpan="8" className="empty-row">{t('Aucun lot contrôlé pour ce département sur ce mois.')}</td></tr>}
           </tbody>
@@ -157,6 +178,32 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
       {error && <p className="lot-feedback lot-feedback-error" role="alert">{t(error)}</p>}
       {notice && <p className="lot-feedback lot-feedback-success" role="status">{t(notice)}</p>}
     </form>
+
+    <section className="lot-analysis lot-blocking-analysis" aria-labelledby="lot-blocking-title">
+      <div className="lot-section-heading lot-blocking-heading">
+        <div><h2 id="lot-blocking-title">{t('Évolution des blocages')} — {t(form.department)}</h2><p>{monthLabel}</p></div>
+        {!['loading', 'error'].includes(mode) && <dl className="lot-blocking-total"><dt>{t('Quantité bloquée du mois')}</dt><dd>{totals.blocked.toLocaleString(locale)}</dd></dl>}
+      </div>
+      <p className="lot-chart-rule">{t('Quantité des lots NOK par jour, du premier au dernier jour du mois. Les jours sans blocage sont affichés à zéro.')}</p>
+      {mode === 'loading' || mode === 'error' ? <p className="empty-row" role="status">{t(mode === 'loading' ? 'Chargement des données…' : 'Chargement impossible')}</p> : <>
+        <div className="lot-blocking-chart-scroll">
+          <div className="lot-blocking-chart">
+            <ResponsiveContainer width="100%" height={300}>
+              <ComposedChart data={trend} margin={{ top: 28, right: 24, bottom: 12, left: 8 }}>
+                <CartesianGrid stroke="#e1e8ef" vertical={false} />
+                <XAxis dataKey="date" interval={0} tickFormatter={(date) => date.slice(-2)} tick={{ fontSize: 11 }} tickLine={false} />
+                <YAxis allowDecimals={false} domain={[0, (maximum) => Math.max(1, Math.ceil(maximum * 1.15))]} tickFormatter={(value) => Number(value).toLocaleString(locale)} width={72} />
+                <Tooltip labelFormatter={formatDate} formatter={(value, name) => [Number(value).toLocaleString(locale), name]} />
+                <Line dataKey="blocked" name={t('Quantité bloquée')} type="linear" stroke="#dc3545" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 6 }} isAnimationActive={false}>
+                  <LabelList dataKey="blocked" position="top" formatter={(value) => value > 0 ? Number(value).toLocaleString(locale) : ''} fill="#b02435" fontSize={11} />
+                </Line>
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        {totals.blocked === 0 && <p className="lot-blocking-empty">{t('Aucun lot bloqué pour ce département sur ce mois.')}</p>}
+      </>}
+    </section>
 
     <section className="lot-analysis" aria-labelledby="lot-analysis-title">
       <div className="lot-section-heading"><div><h2 id="lot-analysis-title">{t('Évolution des quantités')} — {t(form.department)}</h2><p>{monthLabel}</p></div></div>

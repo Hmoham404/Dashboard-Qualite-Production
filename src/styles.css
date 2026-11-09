@@ -53,15 +53,45 @@
 .lot-context-fields label { min-width: 0; font-size: .82rem; }
 .lot-page input, .lot-page select { min-width: 0; width: 100%; height: 40px; min-height: 40px; padding: 0 10px; }
 .lot-table-scroll { overflow-x: auto; border: 1px solid #dce5ee; border-radius: 7px; }
-.lot-inspections-table { width: 100%; min-width: 1130px; table-layout: fixed; }
+.lot-inspections-table { width: 100%; min-width: 1240px; table-layout: fixed; }
 .lot-inspections-table th { white-space: normal; font-size: .78rem; background: #f4f7fb; }
-.lot-inspections-table th:nth-child(1) { width: 22%; }
-.lot-inspections-table th:nth-child(2), .lot-inspections-table th:nth-child(3) { width: 10%; }
-.lot-inspections-table th:nth-child(4) { width: 9%; }
-.lot-inspections-table th:nth-child(5) { width: 15%; }
-.lot-inspections-table th:nth-child(6) { width: 11%; }
+.lot-inspections-table th:nth-child(1) { width: 18%; }
+.lot-inspections-table th:nth-child(2), .lot-inspections-table th:nth-child(3) { width: 9%; }
+.lot-inspections-table th:nth-child(4) { width: 8%; }
+.lot-inspections-table th:nth-child(5) { width: 14%; }
+.lot-inspections-table th:nth-child(6) { width: 10%; }
 .lot-inspections-table th:nth-child(7) { width: 16%; }
-.lot-inspections-table th:nth-child(8) { width: 74px; }
+.lot-inspections-table th:nth-child(8) { width: 176px; }
+.lot-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lot-draft-actions { display: grid; justify-items: start; gap: 8px; }
+.lot-anomaly-button { color: #a91e57; border-color: #edc1d5; background: #fff3f8; }
+.lot-row-actions .lot-anomaly-button, .lot-draft-actions .lot-anomaly-button { min-height: 34px; padding: 5px 8px; font-size: .73rem; }
+.anomaly-report-form { display: grid; gap: 18px; }
+.anomaly-storage-note { margin: 0; font-size: .82rem; color: #64778c; }
+.anomaly-context-panel, .anomaly-section { padding: 22px; border: 1px solid #d6e1eb; border-radius: 10px; background: #fff; }
+.anomaly-context-panel h2, .anomaly-section h2 { margin: 0 0 20px; font-size: 1rem; }
+.anomaly-context-help { margin: -8px 0 18px; color: #64778c; font-size: .82rem; line-height: 1.6; }
+.anomaly-context-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.anomaly-context-grid label { min-width: 0; font-size: .8rem; }
+.anomaly-context-grid input { background: #f6f8fb; color: #3c536b; }
+.anomaly-defect-context { margin: 18px 0 0; font-size: .82rem; color: #64778c; line-height: 1.7; }
+.anomaly-sections { display: grid; gap: 18px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.anomaly-section h2 { display: flex; align-items: center; gap: 10px; }
+.anomaly-section h2 span { padding: 6px 8px; border-radius: 5px; font-size: .75rem; color: #a91e57; background: #fce8f2; }
+.anomaly-action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.anomaly-section label { min-width: 0; font-size: .82rem; }
+.anomaly-section textarea { display: block; width: 100%; min-height: 128px; padding: 12px; resize: vertical; border: 1px solid #c9d7e8; border-radius: 6px; color: #143866; background: #fff; font: inherit; line-height: 1.65; }
+.anomaly-section textarea:focus { outline: 2px solid #be185d; outline-offset: 2px; }
+.anomaly-section textarea[aria-invalid="true"] { border-color: #c73346; background: #fff8f9; }
+.anomaly-report-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding-bottom: 12px; }
+.anomaly-report-form .lot-feedback { margin-top: 0; }
+@media (max-width: 1100px) { .anomaly-context-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .anomaly-context-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .anomaly-action-grid { grid-template-columns: minmax(0, 1fr); }
+  .anomaly-context-panel, .anomaly-section { padding: 16px; }
+  .anomaly-report-actions > button { flex: 1 1 240px; }
+}
 .lot-inspections-table td { vertical-align: middle; white-space: normal; overflow-wrap: anywhere; }
 .lot-entry-row { background: #fffbfd; }
 .lot-row-context { display: block; margin-top: 6px; color: #6a7e94; font-size: .73rem; font-weight: 400; line-height: 1.6; }
@@ -86,6 +116,33 @@
 .lot-stat-ok strong { color: #16945b; }
 .lot-stat-nok strong { color: #c73346; }
 .lot-chart-rule { margin: 0 0 14px; color: #64778c; font-size: .8rem; line-height: 1.6; }
+.lot-blocking-heading { flex-wrap: wrap; }
+.lot-blocking-total { display: grid; gap: 4px; margin: 0; }
+.lot-blocking-total dt { color: #64778c; font-size: .8rem; }
+.lot-blocking-total dd { margin: 0; color: #b02435; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.lot-blocking-chart-scroll { overflow-x: auto; }
+.lot-blocking-chart { min-width: 760px; }
+.lot-blocking-empty { margin: 6px 0 0; color: #64778c; font-size: .82rem; }
+.lot-daily-heading { flex-wrap: wrap; padding-bottom: 18px; border-bottom: 1px solid #e0e7ef; }
+.lot-daily-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.lot-daily-controls label { display: grid; gap: 6px; color: #526a7b; font-size: .8rem; }
+.lot-daily-controls button { min-height: 40px; }
+.lot-daily-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.lot-daily-chart { min-width: 0; margin: 0; }
+.lot-daily-chart + .lot-daily-chart { padding-inline-start: 24px; border-inline-start: 1px solid #e0e7ef; }
+.lot-daily-chart figcaption { margin-bottom: 8px; color: #17364c; font-size: .9rem; font-weight: 700; }
+.lot-daily-chart-plot { min-width: 0; }
+.lot-daily-chart-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 4px 0 0; }
+.lot-daily-chart-values > div { min-width: 0; }
+.lot-daily-chart-values dt { display: flex; align-items: center; gap: 6px; color: #64778c; font-size: .78rem; }
+.lot-daily-key { flex: 0 0 8px; height: 8px; border-radius: 2px; }
+.lot-daily-chart-values dd { margin: 6px 0 0; color: #17364c; font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.lot-daily-rule { margin: 18px 0 0; }
+.lot-daily-empty { margin: 18px 0 0; padding: 10px 12px; background: #f4f7fa; color: #64778c; font-size: .82rem; }
+@media (max-width: 760px) {
+  .lot-daily-charts { grid-template-columns: minmax(0, 1fr); }
+  .lot-daily-chart + .lot-daily-chart { padding-inline-start: 0; padding-top: 20px; border-inline-start: 0; border-top: 1px solid #e0e7ef; }
+}
 @media (max-width: 1000px) { .lot-context-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 600px) {
   .lot-heading { align-items: flex-start; gap: 12px; }
