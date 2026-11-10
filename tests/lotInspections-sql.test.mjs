@@ -15,6 +15,7 @@ test('LOT SQL migration preserves data on reapply and enforces sampling, NOK act
       values('2026-11-03','Injection','OF-1','REF-1','Client A',$1,$2,$3,$4,$5,$6,'Qualiticien A') returning *`, [lot, qty, sample, decision, defect, action]);
     await db.exec('set role anon;');
     await insert('LOT-1', 100, 10, 'OK', null, null);
+    await insert('OK-DEFECT', 100, 10, 'OK', 'Rayure', null);
     await insert('LOT-2', 200, 20, 'NOK', 'Bavure', 'Tri');
     await assert.rejects(insert('LOT-1', 100, 10, 'OK', null, null), /unique/);
     await assert.rejects(insert('BAD-SAMPLE', 10, 11, 'OK', null, null), /check constraint/);
@@ -25,7 +26,7 @@ test('LOT SQL migration preserves data on reapply and enforces sampling, NOK act
     await assert.rejects(db.exec('delete from public.lot_inspections;'), /permission denied/);
     await db.exec('reset role;');
     await db.exec(sql);
-    assert.equal((await db.query('select count(*)::int as count from public.lot_inspections')).rows[0].count, 2);
+    assert.equal((await db.query('select count(*)::int as count from public.lot_inspections')).rows[0].count, 3);
     assert.equal((await db.query("select corrective_action from public.lot_inspections where lot_number='LOT-2'")).rows[0].corrective_action, 'Dérogation');
   } finally { await db.close(); }
 });

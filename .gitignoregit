@@ -1,0 +1,1 @@
+tmp/ rm -r --cached tmpgit add .gitignoregit commit -m "Remove temporary browser files"

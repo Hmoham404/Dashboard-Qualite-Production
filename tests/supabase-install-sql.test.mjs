@@ -44,8 +44,9 @@ test('complete SQL installs every module, allows app operations and preserves re
       corrective_action: 'Regler', corrective_effectiveness: 'Validee' };
     // PostgREST returns civil dates as strings; PGlite returns Date instances.
     const report = buildAnomalyReport({ ...lot, inspection_date: '2025-01-10' }, fields);
+    report.root_cause = '';
     await assert.rejects(db.query('update public.lot_inspections set anomaly_report=$1 where id=$2',
-      [{ ...report, root_cause: '' }, lot.id]), /Rapport incomplet/);
+      [{ ...report, root_cause: 42 }, lot.id]), /Champ du rapport invalide/);
     await db.query('update public.lot_inspections set anomaly_report=$1 where id=$2', [report, lot.id]);
     await assert.rejects(db.query('update public.lot_inspections set anomaly_report=null where id=$1', [lot.id]), /conservé/);
     const archive = (await db.query("select to_jsonb(public.close_production_month('2025-01-01')) as archive")).rows[0].archive;

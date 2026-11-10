@@ -27,7 +27,7 @@ export function validateLotInspection(row) {
 export function lotInspectionPayload(form, existing = null) {
   const payload = Object.fromEntries(['inspection_date', 'department', 'work_order', 'product_reference', 'client_name', 'lot_number', 'inspector_name'].map((field) => [field, String(form[field] || '').trim()]));
   return { ...payload, id: existing?.id || globalThis.crypto.randomUUID(), lot_qty: Number(form.lot_qty), sample_qty: Number(form.sample_qty),
-    decision: form.decision, defect: form.decision === 'NOK' ? form.defect.trim() : null,
+    decision: form.decision, defect: String(form.defect || '').trim() || null,
     corrective_action: form.decision === 'NOK' ? form.corrective_action : null,
     created_at: existing?.created_at || new Date().toISOString(), updated_at: new Date().toISOString(),
     ...(existing?.anomaly_report ? { anomaly_report: existing.anomaly_report } : {}) };
@@ -69,6 +69,26 @@ export function lotTrend(rows, month) {
   return monthDates(month).map((date) => ({ date, ...lotTotals(daily.get(date) || []) }));
 }
 
+// Each inspection contributes one lot, regardless of lot or sample quantity.
+export function lotDefectPareto(rows) {
+  const defects = new Map();
+  for (const row of rows) {
+    const defect = String(row.defect || '').normalize('NFC').trim().replace(/\s+/g, ' ');
+    if (!defect) continue;
+    const key = defect.toLowerCase();
+    const entry = defects.get(key) || { defect, lots: 0 };
+    entry.lots += 1;
+    defects.set(key, entry);
+  }
+  const sorted = [...defects.values()].sort((a, b) => b.lots - a.lots || a.defect.localeCompare(b.defect, 'fr'));
+  const total = sorted.reduce((sum, entry) => sum + entry.lots, 0);
+  let cumulative = 0;
+  return sorted.map((entry) => {
+    cumulative += entry.lots;
+    return { ...entry, cumulativePercent: cumulative / total * 100 };
+  });
+}
+
 export function readLocalLots(storage) {
   const raw = storage.getItem(lotStorageKey);
   if (!raw) return [];
@@ -94,7 +114,7 @@ export async function loadLotInspections(client, storage) {
 export async function saveLotInspection(client, mode, row, storage) {
   if (mode === 'remote') {
     const { data, error } = await client.from('lot_inspections').upsert(row, { onConflict: 'id' }).select().single();
-    if (error) throw error;
+    if (error) throw lotSaveError(error, [row]);
     return data;
   }
   const rows = readLocalLots(storage);
@@ -106,9 +126,17 @@ export async function saveLotInspection(client, mode, row, storage) {
 export async function transferLocalLots(client, rows, storage) {
   if (!rows.length) return [];
   const { data, error } = await client.from('lot_inspections').upsert(rows, { onConflict: 'id' }).select();
-  if (error) throw error;
+  if (error) throw lotSaveError(error, rows);
   const ids = new Set((data || []).map((row) => row.id));
   if (ids.size !== rows.length) throw new Error('Transfert incomplet. Actualisez les contrôles.');
   storage.setItem(lotStorageKey, JSON.stringify(readLocalLots(storage).filter((row) => !ids.has(row.id))));
   return data;
+}
+
+function lotSaveError(error, rows) {
+  if (error.code === '23514' && /lot_inspections_check\d*/.test(String(error.message))
+      && rows.some((row) => row.decision === 'OK' && row.defect?.trim())) {
+    return new Error('Pour enregistrer un défaut sur un lot OK dans Supabase, exécutez supabase-lot-ok-defects.sql, puis réessayez.');
+  }
+  return error;
 }

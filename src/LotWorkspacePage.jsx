@@ -5,13 +5,18 @@ import { entryDateForMonth, localDateKey, monthBounds } from './monthly.js';
 import { loadLotInspections, lotActions, lotDailySummary, lotInspectionPayload, lotTotals, lotTrend, sameLot, saveLotInspection, transferLocalLots, validateLotInspection } from './lotInspections.js';
 import AnomalyReportPage from './AnomalyReportPage.jsx';
 import LotDailyHistograms from './LotDailyHistograms.jsx';
+import LotDefectPareto from './LotDefectPareto.jsx';
+import LotReportIndex from './LotReportIndex.jsx';
+import WorkspaceNavigation from './WorkspaceNavigation.jsx';
+import { SiteMeetingButton } from './SiteMeetingFrame.jsx';
+import { userMessage } from './userMessage.js';
 
 function blankInspection(department, date, context = {}) {
   return { department, inspection_date: date, work_order: '', product_reference: '', client_name: '', lot_number: '',
     lot_qty: '', sample_qty: '', decision: '', defect: '', corrective_action: '', inspector_name: '', ...context };
 }
 
-export default function LotWorkspacePage({ client = null, departmentOptions = [], initialDepartment = 'Injection', initialMonth,
+export default function LotWorkspacePage({ client = null, readOnly = false, view = 'lot', departmentOptions = [], initialDepartment = 'Injection', initialMonth,
   today = localDateKey(), references = [], clients = [], workOrders = [], t = (value) => value, locale = 'fr-FR', downloadReport }) {
   const [month, setMonth] = useState(initialMonth || today.slice(0, 7));
   const [analysisDateOverride, setAnalysisDateOverride] = useState(null);
@@ -33,8 +38,13 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString(locale, { month: 'long', year: 'numeric' });
   const formatDate = (date) => new Date(`${date}T12:00:00`).toLocaleDateString(locale);
   const busy = saving || transferring || mode === 'loading';
-  const canSave = !busy && ['local', 'missing', 'remote'].includes(mode);
+  const canSave = !readOnly && !busy && ['local', 'missing', 'remote'].includes(mode);
   const departments = departmentOptions.length ? departmentOptions : ['Injection', 'Metallisation', 'Assemblage', 'Serigraphie', 'Soudure'];
+  const ControlsContainer = readOnly ? 'section' : 'form';
+
+  useEffect(() => { setReportLot(null); }, [view]);
+  useEffect(() => { if (readOnly && reportLot && !reportLot.anomaly_report) setReportLot(null); }, [readOnly, reportLot]);
+  useEffect(() => { document.querySelector('.lot-page')?.scrollIntoView?.({ block: 'start' }); }, [view, reportLot?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,7 +96,7 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
       setEditingId(null);
       setForm(blankInspection(form.department, form.inspection_date, { work_order: form.work_order, product_reference: form.product_reference,
         client_name: form.client_name, inspector_name: form.inspector_name }));
-      setNotice(mode === 'remote' ? 'Contrôle enregistré dans Supabase.' : 'Contrôle enregistré dans ce navigateur.');
+      setNotice('Contrôle enregistré.');
       if (openReport) setReportLot(saved);
     } catch (cause) {
       setError(cause.code === '23505' ? 'Ce lot existe déjà pour cet OF et cette référence. Modifiez le contrôle existant.' : cause.message);
@@ -101,47 +111,50 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
   }
 
   async function transferInspections() {
-    if (busy || mode !== 'remote') return;
+    if (readOnly || busy || mode !== 'remote') return;
     setTransferring(true); setError(''); setNotice('');
     try {
       const saved = await transferLocalLots(client, pending, window.localStorage);
       setRows((current) => [...saved, ...current.filter((row) => !saved.some((item) => item.id === row.id))]);
-      setPending([]); setNotice('Les contrôles locaux ont été transférés dans Supabase.');
+      setPending([]); setNotice('Les contrôles ont été transférés.');
     } catch (cause) { setError(cause.message); } finally { setTransferring(false); }
   }
 
-  if (reportLot) return <AnomalyReportPage lot={reportLot} client={client} mode={mode} t={t} locale={locale}
+  if (reportLot) return <AnomalyReportPage lot={reportLot} client={client} mode={mode} readOnly={readOnly} sourceView={view} t={t} locale={locale}
     downloadReport={downloadReport}
     onBack={() => setReportLot(null)} onSaved={(saved) => { setRows((current) => current.map((row) => row.id === saved.id ? saved : row)); setReportLot(saved); }} />;
 
   return <main className="lot-page">
     <header className="lot-page-header">
-      <div className="lot-heading"><span className="lot-brand"><Package size={20} />LOT</span><div><h1>{t('Contrôle des lots')}</h1><p>{t('Suivi des décisions et des quantités par département.')}</p></div></div>
-      <a href="#"><ArrowLeft size={18} />{t('Retour au tableau de bord')}</a>
+      <div className="lot-heading"><span className="lot-brand"><Package size={20} />LOT</span><div><h1>{t(view === 'reports' ? 'Rapports d’anomalie' : 'Contrôle des lots')}</h1><p>{t(view === 'reports' ? readOnly ? 'Consultez les rapports d’anomalie du mois.' : 'Retrouvez les rapports enregistrés et les lots NOK à documenter.' : 'Suivi des décisions et des quantités par département.')}</p></div></div>
+      <div className="workspace-header-actions"><a href="#"><ArrowLeft size={18} />{t('Retour au tableau de bord')}</a><SiteMeetingButton /></div>
+      <WorkspaceNavigation current={view} t={t} />
     </header>
 
     <section className="lot-toolbar" aria-label={t('Gestion des contrôles de lots')}>
       <label>{t('Mois affiché')}<input id="lot-month" type="month" max={today.slice(0, 7)} value={month} disabled={busy} onChange={(event) => selectMonth(event.target.value)} /></label>
-      <span className={`lot-storage-state ${mode === 'remote' ? 'lot-storage-shared' : ''}`}>{t(mode === 'remote' ? 'Connecte a Supabase' : mode === 'loading' ? 'Chargement des données…' : mode === 'error' ? 'Chargement impossible' : 'Sauvegarde locale')}</span>
+      {['loading', 'error'].includes(mode) && <span role="status">{t(mode === 'loading' ? 'Chargement des données…' : 'Chargement impossible')}</span>}
       <button type="button" disabled={busy} onClick={() => setReloadCount((value) => value + 1)}><RefreshCcw size={16} />{t('Actualiser')}</button>
-      {pending.length > 0 && mode === 'remote' && <button type="button" disabled={busy} onClick={transferInspections}>{t('Transférer {count} contrôle(s) local(aux)', { count: pending.length })}</button>}
-      {['local', 'missing'].includes(mode) && <p className="lot-storage-help">{t('Les contrôles LOT sont conservés uniquement dans ce navigateur. Pour les partager, exécutez supabase-lot-inspections.sql dans Supabase, puis actualisez.')}</p>}
+      {!readOnly && pending.length > 0 && mode === 'remote' && <button className="lot-transfer-button" type="button" disabled={busy} onClick={transferInspections}>{t('Transférer {count} contrôle(s) local(aux)', { count: pending.length })}</button>}
+      {!readOnly && ['local', 'missing'].includes(mode) && <p className="lot-storage-help">{t('Ces contrôles sont conservés sur cet appareil.')}</p>}
     </section>
 
+    {view === 'reports' ? <LotReportIndex rows={visibleRows} department={form.department} departments={departments} onDepartmentChange={(value) => update('department', value)} onOpen={setReportLot}
+      readOnly={readOnly} loading={mode === 'loading'} error={mode === 'error' ? t('Chargement impossible') : t(userMessage(error))} t={t} locale={locale} /> : <>
     <LotDailyHistograms summary={dailySummary} date={analysisDate} month={month} today={today} department={form.department} bounds={bounds} mode={mode} t={t} locale={locale}
       onDateChange={(date) => {
         if (date >= bounds.from && date <= bounds.to && date <= today) setAnalysisDateOverride(date);
       }}
       onToday={() => { if (month !== today.slice(0, 7)) selectMonth(today.slice(0, 7)); else setAnalysisDateOverride(null); }} />
 
-    <form className="lot-entry-panel" onSubmit={saveInspection} noValidate>
-      <div className="lot-section-heading"><h2>{t(editingId ? 'Modifier le contrôle' : 'Nouveau contrôle')}</h2>{editingId && <button type="button" disabled={busy} onClick={newInspection}><PlusCircle size={16} />{t('Nouveau contrôle')}</button>}</div>
-      <fieldset disabled={!canSave} className="lot-context-fields">
+    <ControlsContainer className="lot-entry-panel" onSubmit={readOnly ? undefined : saveInspection} noValidate={readOnly ? undefined : true}>
+      {!readOnly && <div className="lot-section-heading"><h2>{t(editingId ? 'Modifier le contrôle' : 'Nouveau contrôle')}</h2>{editingId && <button type="button" disabled={busy} onClick={newInspection}><PlusCircle size={16} />{t('Nouveau contrôle')}</button>}</div>}
+      <fieldset disabled={!canSave && !readOnly} className="lot-context-fields">
         <label>{t('Departement')}<select id="lot-department" value={form.department} onChange={(event) => update('department', event.target.value)}>{departments.map((department) => <option value={department} key={department}>{t(department)}</option>)}</select></label>
-        <label>{t('OF / Bon')}<input id="lot-work-order" list="lot-work-orders" value={form.work_order} onChange={(event) => update('work_order', event.target.value)} /></label>
+        {!readOnly && <><label>{t('OF / Bon')}<input id="lot-work-order" list="lot-work-orders" value={form.work_order} onChange={(event) => update('work_order', event.target.value)} /></label>
         <label>{t('Date')}<input id="lot-date" type="date" min={bounds.from} max={bounds.to} value={form.inspection_date} onChange={(event) => update('inspection_date', event.target.value)} /></label>
         <label>{t('Reference produit')}<input id="lot-reference" list="lot-references" value={form.product_reference} onChange={(event) => update('product_reference', event.target.value)} /></label>
-        <label>{t('Client')}<input id="lot-client" list="lot-clients" value={form.client_name} onChange={(event) => update('client_name', event.target.value)} /></label>
+        <label>{t('Client')}<input id="lot-client" list="lot-clients" value={form.client_name} onChange={(event) => update('client_name', event.target.value)} /></label></>}
       </fieldset>
       <datalist id="lot-work-orders">{[...new Set(workOrders)].filter(Boolean).map((value) => <option key={value} value={value} />)}</datalist>
       <datalist id="lot-references">{[...new Set(references)].filter(Boolean).map((value) => <option key={value} value={value} />)}</datalist>
@@ -150,34 +163,34 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
         <table className="lot-inspections-table">
           <thead><tr>{['Numéro de lot', 'Quantité du lot', 'Échantillonnage', 'Décision', 'Défaut', 'Action', 'Nom du qualiticien', 'Actions'].map((label) => <th key={label} scope="col">{t(label)}</th>)}</tr></thead>
           <tbody>
-            <tr className="lot-entry-row">
+            {!readOnly && <tr className="lot-entry-row">
               <td><input ref={lotNumberRef} id="lot-number" aria-label={t('Numéro de lot')} value={form.lot_number} disabled={!canSave} onChange={(event) => update('lot_number', event.target.value)} /></td>
               <td><input id="lot-quantity" aria-label={t('Quantité du lot')} type="number" min="1" step="1" max="2147483647" value={form.lot_qty} disabled={!canSave} onChange={(event) => update('lot_qty', event.target.value)} /></td>
               <td><input id="lot-sample" aria-label={t('Échantillonnage')} type="number" min="1" step="1" max={form.lot_qty || undefined} value={form.sample_qty} disabled={!canSave} onChange={(event) => update('sample_qty', event.target.value)} /></td>
-              <td><select id="lot-decision" aria-label={t('Décision')} className={`lot-decision-select ${form.decision === 'OK' ? 'lot-is-ok' : form.decision === 'NOK' ? 'lot-is-nok' : ''}`} value={form.decision} disabled={!canSave} onChange={(event) => setForm({ ...form, decision: event.target.value, defect: '', corrective_action: '' })}><option value="">{t('Choisir')}</option><option value="OK">{t('OK')}</option><option value="NOK">{t('NOK')}</option></select></td>
-              <td><input id="lot-defect" aria-label={t('Défaut')} value={form.defect} disabled={!canSave || form.decision !== 'NOK'} placeholder={form.decision === 'OK' ? '—' : t('Défaut constaté')} onChange={(event) => update('defect', event.target.value)} /></td>
+              <td><select id="lot-decision" aria-label={t('Décision')} className={`lot-decision-select ${form.decision === 'OK' ? 'lot-is-ok' : form.decision === 'NOK' ? 'lot-is-nok' : ''}`} value={form.decision} disabled={!canSave} onChange={(event) => setForm({ ...form, decision: event.target.value, corrective_action: event.target.value === 'NOK' ? form.corrective_action : '' })}><option value="">{t('Choisir')}</option><option value="OK">{t('OK')}</option><option value="NOK">{t('NOK')}</option></select></td>
+              <td><input id="lot-defect" aria-label={t('Défaut')} value={form.defect} disabled={!canSave || !form.decision} placeholder={t(form.decision === 'OK' ? 'Défaut constaté (facultatif)' : 'Défaut constaté')} onChange={(event) => update('defect', event.target.value)} /></td>
               <td><select id="lot-action" aria-label={t('Action')} value={form.corrective_action} disabled={!canSave || form.decision !== 'NOK'} onChange={(event) => update('corrective_action', event.target.value)}><option value="">{form.decision === 'NOK' ? t('Choisir') : '—'}</option>{lotActions.map((action) => <option key={action} value={action}>{t(action)}</option>)}</select></td>
               <td><input id="lot-inspector" aria-label={t('Nom du qualiticien')} value={form.inspector_name} disabled={!canSave} onChange={(event) => update('inspector_name', event.target.value)} /></td>
               <td><div className="lot-draft-actions"><span className="lot-draft-marker">{t(editingId ? 'Modification' : 'Saisie')}</span>{form.decision === 'NOK' && <button className="lot-anomaly-button" type="button" disabled={!canSave} onClick={(event) => saveInspection(event, true)}><FileText size={15} />{t('Rapport d’anomalie')}</button>}</div></td>
-            </tr>
+            </tr>}
             {visibleRows.map((row) => <tr key={row.id} className={row.id === editingId ? 'lot-editing-row' : ''}>
               <td><strong>{row.lot_number}</strong><small className="lot-row-context">{formatDate(row.inspection_date)} · {row.work_order}<br />{row.product_reference} · {row.client_name}</small></td>
               <td>{row.lot_qty.toLocaleString(locale)}</td><td>{row.sample_qty.toLocaleString(locale)}</td>
               <td><span className={`lot-decision-badge ${row.decision === 'OK' ? 'lot-is-ok' : 'lot-is-nok'}`}>{row.decision === 'OK' ? <CheckCircle2 size={15} /> : <ShieldAlert size={15} />}{row.decision}</span></td>
               <td>{row.defect || '—'}</td><td>{row.corrective_action ? t(row.corrective_action) : '—'}</td><td>{row.inspector_name}</td>
-              <td><div className="lot-row-actions"><button type="button" className="icon-only" disabled={!canSave} onClick={() => editInspection(row)} aria-label={t('Modifier le lot {lot}', { lot: row.lot_number })}><Edit3 size={17} /></button>
-                {(row.decision === 'NOK' || row.anomaly_report) && <button type="button" className="lot-anomaly-button" disabled={!canSave} onClick={() => setReportLot(row)}><FileText size={15} />{t('Rapport d’anomalie')}</button>}
+              <td><div className="lot-row-actions">{!readOnly && <button type="button" className="icon-only" disabled={!canSave} onClick={() => editInspection(row)} aria-label={t('Modifier le lot {lot}', { lot: row.lot_number })}><Edit3 size={17} /></button>}
+                {((!readOnly && row.decision === 'NOK') || row.anomaly_report) && <button type="button" className="lot-anomaly-button" disabled={busy || mode === 'error'} onClick={() => setReportLot(row)}><FileText size={15} />{t('Rapport d’anomalie')}</button>}
               </div></td>
             </tr>)}
             {!visibleRows.length && <tr><td colSpan="8" className="empty-row">{t('Aucun lot contrôlé pour ce département sur ce mois.')}</td></tr>}
           </tbody>
         </table>
       </div>
-      <div className="lot-entry-footer"><p>{t('L’action et le défaut sont obligatoires uniquement pour une décision NOK.')}</p><div>{editingId && <button type="button" disabled={busy} onClick={newInspection}>{t('Annuler')}</button>}<button className="lot-save-button" type="submit" disabled={!canSave}><Save size={17} />{t(saving ? 'Enregistrement…' : 'Enregistrer le contrôle')}</button></div></div>
+      {!readOnly && <><div className="lot-entry-footer"><p>{t('L’action et le défaut sont obligatoires uniquement pour une décision NOK.')}</p><div>{editingId && <button type="button" disabled={busy} onClick={newInspection}>{t('Annuler')}</button>}<button className="lot-save-button" type="submit" disabled={!canSave}><Save size={17} />{t(saving ? 'Enregistrement…' : 'Enregistrer le contrôle')}</button></div></div>
       {missingFields.length > 0 && <div className="lot-feedback lot-feedback-error" role="alert"><strong>{t('Champs à vérifier')}</strong><ul>{missingFields.map((field) => <li key={field}>{t(field)}</li>)}</ul></div>}
-      {error && <p className="lot-feedback lot-feedback-error" role="alert">{t(error)}</p>}
-      {notice && <p className="lot-feedback lot-feedback-success" role="status">{t(notice)}</p>}
-    </form>
+      {notice && <p className="lot-feedback lot-feedback-success" role="status">{t(notice)}</p>}</>}
+      {error && <p className="lot-feedback lot-feedback-error" role="alert">{t(userMessage(error))}</p>}
+    </ControlsContainer>
 
     <section className="lot-analysis lot-blocking-analysis" aria-labelledby="lot-blocking-title">
       <div className="lot-section-heading lot-blocking-heading">
@@ -227,5 +240,7 @@ export default function LotWorkspacePage({ client = null, departmentOptions = []
         </ComposedChart>
       </ResponsiveContainer>}
     </section>
+    <LotDefectPareto rows={visibleRows} department={form.department} monthLabel={monthLabel} mode={mode} t={t} locale={locale} />
+    </>}
   </main>;
 }

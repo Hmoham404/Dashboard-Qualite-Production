@@ -20,6 +20,165 @@ export function readLanguage(storage) {
 // French source keys keep stored department/defect identifiers independent of display language.
 // Columns: French | English | Arabic | Simplified Chinese | Italian.
 const rows = `
+Enregistrer|Save|حفظ|保存|Salva
+Réclamations clients|Customer complaints|شكاوى العملاء|客户投诉|Reclami clienti
+Calendrier et registre mensuel · tous clients et départements.|Monthly calendar and register · all customers and departments.|تقويم وسجل شهري · جميع العملاء والأقسام.|月度日历及记录 · 所有客户和部门。|Calendario e registro mensile · tutti i clienti e reparti.
+Ajouter une réclamation|Add a complaint|إضافة شكوى|添加投诉|Aggiungi un reclamo
+Réclamations ce mois|Complaints this month|شكاوى هذا الشهر|本月投诉|Reclami del mese
+Jours concernés|Days affected|الأيام المعنية|涉及天数|Giorni interessati
+Écart avec le mois précédent|Change from previous month|التغير عن الشهر السابق|与上月相比|Variazione dal mese precedente
+Mois précédent : {count} réclamation(s).|Previous month: {count} complaint(s).|الشهر السابق: {count} شكوى.|上月：{count} 条投诉。|Mese precedente: {count} reclami.
+Calendrier des réclamations|Complaints calendar|تقويم الشكاوى|投诉日历|Calendario reclami
+Sélectionnez un jour pour consulter ses réclamations.|Select a day to view its complaints.|اختر يومًا لعرض شكاواه.|选择日期以查看当天的投诉。|Seleziona un giorno per consultare i reclami.
+Jours du mois|Days of the month|أيام الشهر|本月日期|Giorni del mese
+{count} réclamation(s)|{count} complaint(s)|{count} شكوى|{count} 条投诉|{count} reclami
+Aucune réclamation|No complaints|لا شكاوى|无投诉|Nessun reclamo
+Une réclamation|One complaint|شكوى واحدة|一条投诉|Un reclamo
+Plusieurs réclamations|Several complaints|عدة شكاوى|多条投诉|Più reclami
+Liste des réclamations|Complaints list|قائمة الشكاوى|投诉列表|Elenco reclami
+{count} résultat(s)|{count} result(s)|{count} نتيجة|{count} 条结果|{count} risultati
+Rechercher une réclamation|Search complaints|البحث عن شكوى|搜索投诉|Cerca un reclamo
+Rechercher dans les réclamations…|Search complaints…|البحث في الشكاوى…|搜索投诉…|Cerca nei reclami…
+Réclamation client|Customer complaint|شكوى عميل|客户投诉|Reclamo cliente
+Supprimer la réclamation du {date}|Delete complaint dated {date}|حذف شكوى {date}|删除 {date} 的投诉|Elimina il reclamo del {date}
+Aucune réclamation pour cette sélection.|No complaints match this selection.|لا توجد شكاوى لهذا التحديد.|当前筛选下无投诉。|Nessun reclamo per questa selezione.
+Aucune réclamation enregistrée.|No complaints recorded.|لا توجد شكاوى مسجلة.|暂无已登记投诉。|Nessun reclamo registrato.
+Nouvelle réclamation client|New customer complaint|شكوى عميل جديدة|新增客户投诉|Nuovo reclamo cliente
+Date de réclamation|Complaint date|تاريخ الشكوى|投诉日期|Data reclamo
+Décrivez la réclamation du client…|Describe the customer complaint…|صف شكوى العميل…|描述客户投诉…|Descrivi il reclamo del cliente…
+Supprimer cette réclamation ?|Delete this complaint?|حذف هذه الشكوى؟|删除这条投诉？|Eliminare questo reclamo?
+L’enregistrement des champs vides nécessite une mise à jour. Contactez votre administrateur.|Saving empty fields requires an update. Contact your administrator.|يتطلب حفظ الحقول الفارغة تحديثًا. اتصل بالمسؤول.|保存空字段需要更新。请联系管理员。|Il salvataggio dei campi vuoti richiede un aggiornamento. Contatta l’amministratore.
+Tous les champs du rapport sont facultatifs. Vous pouvez enregistrer et compléter plus tard.|All report fields are optional. You can save and complete them later.|جميع حقول التقرير اختيارية. يمكنك الحفظ وإكمالها لاحقًا.|报告的所有字段均为选填。您可以保存后再补充。|Tutti i campi del rapporto sono facoltativi. Puoi salvare e completarli in seguito.
+Service indisponible. Réessayez ou contactez votre administrateur.|Service unavailable. Try again or contact your administrator.|الخدمة غير متاحة. أعد المحاولة أو اتصل بالمسؤول.|服务不可用。请重试或联系管理员。|Servizio non disponibile. Riprova o contatta l’amministratore.
+Les données sont conservées sur cet appareil. Exportez le bilan pour en garder une copie.|Data is saved on this device. Export the report to keep a copy.|البيانات محفوظة على هذا الجهاز. صدّر التقرير للاحتفاظ بنسخة.|数据保存在此设备上。导出报告以保留副本。|I dati sono salvati su questo dispositivo. Esporta il resoconto per conservarne una copia.
+La clôture mensuelle est indisponible. Contactez votre administrateur.|Monthly closing is unavailable. Contact your administrator.|الإغلاق الشهري غير متاح. اتصل بالمسؤول.|月度结算不可用。请联系管理员。|La chiusura mensile non è disponibile. Contatta l’amministratore.
+Impossible de vérifier les clôtures. Actualisez les données.|Unable to check month closures. Refresh the data.|تعذّر التحقق من الإغلاقات. حدّث البيانات.|无法检查月度结算。请刷新数据。|Impossibile verificare le chiusure. Aggiorna i dati.
+Du premier au dernier jour du mois. Chaque point indique la présence d’une réclamation.|From the first to the last day of the month. Each point indicates a complaint.|من أول يوم إلى آخر يوم في الشهر. تشير كل نقطة إلى وجود شكوى.|从月初到月末。每个点表示当天有投诉。|Dal primo all’ultimo giorno del mese. Ogni punto indica la presenza di un reclamo.
+Du 1er au dernier jour du mois. Chaque point : 1 le jour de la réclamation, 0 sinon. Double-cliquez sur une date pour ajouter une réclamation.|From the first to the last day of the month. Each point is 1 on a complaint day, otherwise 0. Double-click a date to add a complaint.|من أول الشهر إلى آخره. كل نقطة تساوي 1 في يوم الشكوى و0 خلاف ذلك. انقر مرتين على تاريخ لإضافة شكوى.|从月初到月末。投诉日为1，否则为0。双击日期可添加投诉。|Dal primo all’ultimo giorno del mese. Ogni punto vale 1 nel giorno del reclamo, altrimenti 0. Fai doppio clic su una data per aggiungere un reclamo.
+Aucune donnée pour ces filtres.|No data for these filters.|لا توجد بيانات لهذه المرشحات.|当前筛选条件下无数据。|Nessun dato per questi filtri.
+Contrôle enregistré.|Inspection saved.|تم حفظ الفحص.|检查已保存。|Controllo salvato.
+Rapport enregistré.|Report saved.|تم حفظ التقرير.|报告已保存。|Rapporto salvato.
+Les contrôles ont été transférés.|Inspections transferred.|تم نقل الفحوصات.|检查已转移。|Controlli trasferiti.
+Ces contrôles sont conservés sur cet appareil.|These inspections are saved on this device.|هذه الفحوصات محفوظة على هذا الجهاز.|这些检查保存在此设备上。|Questi controlli sono salvati su questo dispositivo.
+Consultez les rapports d’anomalie du mois.|View this month’s anomaly reports.|اطّلع على تقارير الحالات غير المطابقة لهذا الشهر.|查看本月异常报告。|Consulta i rapporti di anomalia del mese.
+Sans rapport|No report|بدون تقرير|无报告|Senza rapporto
+Heures de tri par client et par jour.|Sorting hours by client and day.|ساعات الفرز حسب العميل واليوم.|按客户和日期统计分拣工时。|Ore di cernita per cliente e giorno.
+L’enregistrement des tris est indisponible.|Saving sorting operations is unavailable.|حفظ عمليات الفرز غير متاح.|无法保存分拣操作。|Il salvataggio delle operazioni di cernita non è disponibile.
+Navigation principale|Main navigation|التنقل الرئيسي|主导航|Navigazione principale
+Tableau de bord|Dashboard|لوحة المعلومات|仪表板|Dashboard
+Rapports d’anomalie|Anomaly reports|تقارير الحالات غير المطابقة|异常报告|Rapporti di anomalia
+Options du mode réunion|Meeting mode options|خيارات وضع الاجتماع|会议模式选项|Opzioni modalità riunione
+Quitter la réunion|Exit meeting|الخروج من الاجتماع|退出会议|Esci dalla riunione
+Retour aux rapports|Back to reports|العودة إلى التقارير|返回报告|Torna ai rapporti
+Retrouvez les rapports enregistrés et les lots NOK à documenter.|Find saved reports and NOK lots awaiting documentation.|اعثر على التقارير المحفوظة والدفعات NOK التي تحتاج إلى توثيق.|查找已保存的报告和尚待记录的 NOK 批次。|Trova i rapporti salvati e i lotti NOK da documentare.
+Enregistrés|Saved|محفوظة|已保存|Salvati
+Enregistré|Saved|محفوظ|已保存|Salvato
+À rédiger|To write|للإعداد|待编写|Da redigere
+Rechercher|Search|بحث|搜索|Cerca
+Client, lot, référence, défaut…|Client, lot, reference, defect…|عميل، دفعة، مرجع، عيب…|客户、批次、参考号、缺陷…|Cliente, lotto, riferimento, difetto…
+Statut|Status|الحالة|状态|Stato
+Consulter|View|عرض|查看|Visualizza
+Rédiger|Write|إعداد|编写|Redigi
+Aucun rapport ni lot NOK pour cette sélection.|No reports or NOK lots for this selection.|لا توجد تقارير أو دفعات NOK لهذا التحديد.|此筛选下无报告或 NOK 批次。|Nessun rapporto o lotto NOK per questa selezione.
+Activer le mode réunion|Enable meeting mode|تفعيل وضع الاجتماع|启用会议模式|Attiva modalità riunione
+Quitter le mode réunion|Exit meeting mode|الخروج من وضع الاجتماع|退出会议模式|Esci dalla modalità riunione
+Présentez tout le site avec ses graphiques et tableaux.|Present the whole site with its charts and tables.|اعرض الموقع بالكامل بمخططاته وجداوله.|展示整个网站及其图表和表格。|Presenta tutto il sito con i suoi grafici e tabelle.
+Tout le site en présentation · filtres et navigation disponibles.|Whole site in presentation mode · filters and navigation available.|الموقع بالكامل في وضع العرض · الفلاتر والتنقل متاحان.|全站演示模式 · 可使用筛选和导航。|Tutto il sito in presentazione · filtri e navigazione disponibili.
+Mode réunion : les saisies sont désactivées.|Meeting mode: data entry is disabled.|وضع الاجتماع: إدخال البيانات معطّل.|会议模式：已禁用数据录入。|Modalità riunione: inserimento dati disattivato.
+Le plein écran est indisponible. Le mode réunion reste actif.|Full screen is unavailable. Meeting mode remains active.|ملء الشاشة غير متاح. يبقى وضع الاجتماع نشطًا.|全屏不可用。会议模式仍然启用。|Schermo intero non disponibile. La modalità riunione resta attiva.
+L’impression est indisponible dans ce navigateur.|Printing is unavailable in this browser.|الطباعة غير متاحة في هذا المتصفح.|此浏览器不支持打印。|Stampa non disponibile in questo browser.
+Données de production indisponibles.|Production data unavailable.|بيانات الإنتاج غير متاحة.|生产数据不可用。|Dati di produzione non disponibili.
+Mode réunion|Meeting mode|وضع الاجتماع|会议模式|Modalità riunione
+Présenter, décider, suivre.|Present, decide, follow up.|اعرض وقرّر وتابع.|展示、决策、跟进。|Presentare, decidere, seguire.
+Préparez les chiffres du mois et ouvrez une présentation adaptée au partage d’écran.|Prepare the monthly figures and open a presentation for screen sharing.|جهّز أرقام الشهر وافتح عرضًا مناسبًا لمشاركة الشاشة.|准备月度数据并打开适合屏幕共享的演示。|Prepara i dati del mese e apri una presentazione per la condivisione dello schermo.
+Démarrer la présentation|Start presentation|بدء العرض|开始演示|Avvia presentazione
+Revue qualité et production|Quality and production review|مراجعة الجودة والإنتاج|质量与生产评审|Riesame qualità e produzione
+Synthèse|Overview|ملخص|概览|Sintesi
+Production et défauts|Production and defects|الإنتاج والعيوب|生产与缺陷|Produzione e difetti
+Tri par client|Sorting by customer|الفرز حسب العميل|按客户分拣|Cernita per cliente
+Décisions et actions|Decisions and actions|القرارات والإجراءات|决策与行动|Decisioni e azioni
+Tous les clients|All customers|جميع العملاء|所有客户|Tutti i clienti
+Périmètre|Scope|النطاق|范围|Ambito
+Ce périmètre est propre à la réunion.|This scope is specific to the meeting.|هذا النطاق خاص بالاجتماع.|此范围仅适用于会议。|Questo ambito è specifico della riunione.
+Les chiffres sont figés à l’ouverture de la présentation.|Figures are frozen when the presentation opens.|تُثبّت الأرقام عند فتح العرض.|打开演示时固定数据。|I dati vengono fissati all’apertura della presentazione.
+Attendez le chargement des données de production avant de démarrer.|Wait for production data to load before starting.|انتظر تحميل بيانات الإنتاج قبل البدء.|开始前请等待生产数据加载。|Attendi il caricamento dei dati di produzione prima di iniziare.
+Titre de la réunion|Meeting title|عنوان الاجتماع|会议标题|Titolo della riunione
+Participants|Participants|المشاركون|参会人员|Partecipanti
+Décisions et points à suivre|Decisions and follow-up items|القرارات ونقاط المتابعة|决策与跟进事项|Decisioni e punti da seguire
+Constats, décisions prises et points à vérifier à la prochaine réunion…|Findings, decisions made and points to check at the next meeting…|الملاحظات والقرارات المتخذة والنقاط المطلوب التحقق منها في الاجتماع القادم…|发现的问题、已做出的决策及下次会议需核实的事项…|Osservazioni, decisioni prese e punti da verificare alla prossima riunione…
+Plan d’actions|Action plan|خطة العمل|行动计划|Piano d’azione
+Ajouter une action|Add an action|إضافة إجراء|添加行动|Aggiungi un’azione
+Responsable|Owner|المسؤول|负责人|Responsabile
+Échéance|Due date|الموعد النهائي|截止日期|Scadenza
+À faire|To do|للإنجاز|待办|Da fare
+En cours|In progress|قيد التنفيذ|进行中|In corso
+Terminé|Done|مكتمل|已完成|Completato
+Retirer cette action|Remove this action|إزالة هذا الإجراء|移除此行动|Rimuovi questa azione
+Attribuez un responsable et une échéance à chaque action.|Assign an owner and due date to each action.|حدّد مسؤولًا وموعدًا نهائيًا لكل إجراء.|为每项行动指定负责人和截止日期。|Assegna un responsabile e una scadenza a ogni azione.
+Notes sauvegardées dans ce navigateur, pour ce mois.|Notes saved in this browser for this month.|حُفظت الملاحظات في هذا المتصفح لهذا الشهر.|本月备注已保存在此浏览器中。|Note salvate in questo browser per questo mese.
+Sauvegarde locale indisponible. Téléchargez le compte rendu pour conserver vos notes.|Local saving is unavailable. Download the minutes to keep your notes.|الحفظ المحلي غير متاح. نزّل المحضر للاحتفاظ بملاحظاتك.|本地保存不可用。请下载会议纪要以保留备注。|Salvataggio locale non disponibile. Scarica il verbale per conservare le note.
+Télécharger le compte rendu|Download meeting minutes|تنزيل محضر الاجتماع|下载会议纪要|Scarica il verbale
+Imprimer / PDF|Print / PDF|طباعة / PDF|打印 / PDF|Stampa / PDF
+Partagez cette présentation avec votre outil de réunion habituel.|Share this presentation using your usual meeting tool.|شارك هذا العرض باستخدام أداة الاجتماعات المعتادة.|使用您常用的会议工具共享此演示。|Condividi la presentazione con il tuo strumento abituale per le riunioni.
+Données figées le|Data frozen on|البيانات مثبتة بتاريخ|数据固定时间|Dati fissati il
+Bilan par département|Department summary|ملخص حسب القسم|部门汇总|Riepilogo per reparto
+Objectif|Target|الهدف|目标|Obiettivo
+Réclamations du mois — tous clients|Monthly complaints — all customers|شكاوى الشهر — جميع العملاء|本月投诉 — 所有客户|Reclami del mese — tutti i clienti
+Les réclamations sont globales ; elles ne sont pas filtrées par client ou département.|Complaints are global; customer and department filters do not apply.|الشكاوى إجمالية؛ لا تُصفّى حسب العميل أو القسم.|投诉为全局数据，不按客户或部门筛选。|I reclami sono globali; i filtri cliente e reparto non si applicano.
+Aucune donnée de production pour ce périmètre.|No production data for this scope.|لا توجد بيانات إنتاج لهذا النطاق.|此范围内无生产数据。|Nessun dato di produzione per questo ambito.
+Évolution des rebuts|Scrap trend|تطور المرفوضات|废品趋势|Andamento degli scarti
+Principaux défauts|Main defects|العيوب الرئيسية|主要缺陷|Difetti principali
+Les six défauts les plus fréquents du périmètre sont présentés.|The six most frequent defects in this scope are shown.|تُعرض العيوب الستة الأكثر تكرارًا في هذا النطاق.|显示此范围内最常见的六种缺陷。|Sono mostrati i sei difetti più frequenti dell’ambito.
+Aucun défaut renseigné pour ce périmètre.|No defects recorded for this scope.|لا توجد عيوب مسجلة لهذا النطاق.|此范围内未记录缺陷。|Nessun difetto registrato per questo ambito.
+Données de tri indisponibles. Actualisez le tableau de bord avant de préparer la réunion.|Sorting data is unavailable. Refresh the dashboard before preparing the meeting.|بيانات الفرز غير متاحة. حدّث لوحة المتابعة قبل إعداد الاجتماع.|分拣数据不可用。准备会议前请刷新看板。|Dati di cernita non disponibili. Aggiorna la dashboard prima di preparare la riunione.
+Données indisponibles|Data unavailable|البيانات غير متاحة|数据不可用|Dati non disponibili
+Aucune décision renseignée pour le moment.|No decisions recorded yet.|لم تُسجّل قرارات بعد.|尚未记录决策。|Nessuna decisione registrata al momento.
+Aucune action renseignée pour le moment.|No actions recorded yet.|لم تُسجّل إجراءات بعد.|尚未记录行动。|Nessuna azione registrata al momento.
+Responsable à préciser|Owner to be assigned|يجب تحديد المسؤول|待指定负责人|Responsabile da definire
+Échéance à préciser|Due date to be set|يجب تحديد الموعد|待确定截止日期|Scadenza da definire
+Vues de la réunion|Meeting views|عروض الاجتماع|会议视图|Viste della riunione
+Vue précédente|Previous view|العرض السابق|上一视图|Vista precedente
+Vue suivante|Next view|العرض التالي|下一视图|Vista successiva
+Plein écran|Full screen|ملء الشاشة|全屏|Schermo intero
+Quitter le plein écran|Exit full screen|الخروج من ملء الشاشة|退出全屏|Esci da schermo intero
+Fermer la présentation|Close presentation|إغلاق العرض|关闭演示|Chiudi presentazione
+Le plein écran est indisponible. La présentation reste ouverte.|Full screen is unavailable. The presentation remains open.|ملء الشاشة غير متاح. يبقى العرض مفتوحًا.|全屏不可用。演示仍保持打开。|Schermo intero non disponibile. La presentazione resta aperta.
+Compte rendu de réunion|Meeting minutes|محضر الاجتماع|会议纪要|Verbale della riunione
+Le téléchargement a échoué. Vos notes restent affichées.|Download failed. Your notes remain visible.|فشل التنزيل. تبقى ملاحظاتك ظاهرة.|下载失败。备注仍然显示。|Download non riuscito. Le note restano visibili.
+L’impression a échoué. Téléchargez le compte rendu pour conserver vos notes.|Printing failed. Download the minutes to keep your notes.|فشلت الطباعة. نزّل المحضر للاحتفاظ بملاحظاتك.|打印失败。请下载会议纪要以保留备注。|Stampa non riuscita. Scarica il verbale per conservare le note.
+Heures de tri par jour|Daily sorting hours|ساعات الفرز اليومية|每日分拣工时|Ore di cernita giornaliere
+Une ligne par opération de tri|One row per sorting operation|سطر لكل عملية فرز|每项分拣作业一行|Una riga per operazione di cernita
+Ajouter un tri|Add sorting operation|إضافة عملية فرز|添加分拣作业|Aggiungi una cernita
+Modifier le tri|Edit sorting operation|تعديل عملية الفرز|编辑分拣作业|Modifica la cernita
+Plusieurs clients et plusieurs opérations peuvent être enregistrés le même jour.|Multiple customers and operations can be recorded on the same day.|يمكن تسجيل عدة عملاء وعمليات في اليوم نفسه.|同一天可记录多个客户和多项作业。|È possibile registrare più clienti e operazioni nello stesso giorno.
+Tous les départements|All departments|جميع الأقسام|所有部门|Tutti i reparti
+Client non renseigné|Customer not recorded|العميل غير مسجل|未记录客户|Cliente non indicato
+Durée du tri (h)|Sorting duration (h)|مدة الفرز (ساعات)|分拣时长（小时）|Durata della cernita (h)
+Heures-personnes|Person-hours|ساعات العمل البشرية|人时|Ore-persona
+Heures-personnes = durée du tri × effectif.|Person-hours = sorting duration × staff count.|ساعات العمل البشرية = مدة الفرز × عدد العاملين.|人时 = 分拣时长 × 人数。|Ore-persona = durata della cernita × numero di addetti.
+Opérations de tri|Sorting operations|عمليات الفرز|分拣作业|Operazioni di cernita
+Cumul des heures|Cumulative hours|الساعات التراكمية|累计工时|Ore cumulative
+Barres : heures par client. Courbe : cumul des heures du mois. Cliquez sur un jour pour voir ses opérations.|Bars: hours by customer. Line: cumulative monthly hours. Click a day to view its operations.|الأعمدة: الساعات لكل عميل. المنحنى: الساعات التراكمية للشهر. انقر على يوم لعرض عملياته.|柱形表示各客户工时，曲线表示本月累计工时。点击某天查看作业。|Barre: ore per cliente. Curva: ore cumulative del mese. Clicca su un giorno per vedere le operazioni.
+Calcul partiel : {count} tri(s) sans effectif.|Partial calculation: {count} operation(s) without a staff count.|حساب جزئي: {count} عملية دون عدد عاملين.|部分计算：{count} 项作业未记录人数。|Calcolo parziale: {count} operazioni senza numero di addetti.
+Aucun tri pour ces filtres sur ce mois.|No sorting operations match these filters this month.|لا توجد عمليات فرز تطابق هذه الفلاتر لهذا الشهر.|本月无符合筛选条件的分拣作业。|Nessuna cernita corrisponde ai filtri nel mese.
+Jour à consulter|Day to view|اليوم المراد عرضه|查看日期|Giorno da consultare
+Tout le mois|Entire month|الشهر بالكامل|整月|Tutto il mese
+Facultatif|Optional|اختياري|可选|Facoltativo
+Ancienne saisie : le client peut être renseigné sans modifier les quantités.|Legacy entry: a customer can be assigned without changing quantities.|سجل قديم: يمكن تحديد العميل دون تغيير الكميات.|旧记录：可填写客户而不更改数量。|Vecchia registrazione: è possibile indicare il cliente senza modificare le quantità.
+Enregistrer et ajouter un autre tri|Save and add another operation|حفظ وإضافة عملية فرز أخرى|保存并添加另一项作业|Salva e aggiungi un’altra cernita
+Tri enregistré. Vous pouvez ajouter une autre opération.|Sorting saved. You can add another operation.|تم حفظ الفرز. يمكنك إضافة عملية أخرى.|分拣已保存，可添加另一项作业。|Cernita salvata. Puoi aggiungere un’altra operazione.
+Vérifiez les champs du tri.|Check the sorting fields.|تحقق من حقول الفرز.|请检查分拣字段。|Verifica i campi della cernita.
+Configurez Supabase pour enregistrer les heures de tri en ligne.|Configure Supabase to save sorting hours online.|قم بإعداد Supabase لحفظ ساعات الفرز عبر الإنترنت.|请配置 Supabase 以在线保存分拣工时。|Configura Supabase per salvare online le ore di cernita.
+Pour enregistrer plusieurs tris par jour et par client, exécutez supabase-sorting-operations.sql dans Supabase, puis actualisez.|To save multiple sorting operations per day and customer, run supabase-sorting-operations.sql in Supabase, then refresh.|لحفظ عدة عمليات فرز يوميًا ولكل عميل، نفّذ supabase-sorting-operations.sql في Supabase ثم حدّث.|要每天为各客户保存多项分拣作业，请在 Supabase 执行 supabase-sorting-operations.sql 后刷新。|Per salvare più cernite al giorno e per cliente, esegui supabase-sorting-operations.sql in Supabase e aggiorna.
+Défaut constaté (facultatif)|Observed defect (optional)|العيب المسجل (اختياري)|发现的缺陷（可选）|Difetto riscontrato (facoltativo)
+Pareto des défauts|Defect Pareto|مخطط باريتو للعيوب|缺陷帕累托图|Pareto dei difetti
+Lots avec défaut|Lots with a defect|دفعات بها عيب|有缺陷记录的批次|Lotti con difetto
+Nombre de lots|Number of lots|عدد الدفعات|批次数量|Numero di lotti
+Cumul (%)|Cumulative (%)|النسبة التراكمية (%)|累计比例 (%)|Cumulata (%)
+Voir les données du Pareto|View Pareto data|عرض بيانات باريتو|查看帕累托数据|Visualizza i dati del Pareto
+Aucun défaut renseigné pour ce département sur ce mois.|No defects recorded for this department this month.|لا توجد عيوب مسجلة لهذا القسم في هذا الشهر.|此部门本月未记录缺陷。|Nessun difetto registrato per questo reparto nel mese.
+Lots OK et NOK avec un défaut renseigné, classés par fréquence décroissante. Chaque lot compte une fois ; la courbe indique le pourcentage cumulé.|OK and NOK lots with a recorded defect, ranked by decreasing frequency. Each lot counts once; the line shows the cumulative percentage.|دفعات OK وNOK ذات عيب مسجل، مرتبة حسب التكرار تنازليًا. تُحسب كل دفعة مرة واحدة؛ يعرض المنحنى النسبة التراكمية.|按频次降序排列已记录缺陷的 OK 和 NOK 批次。每批计数一次；曲线表示累计百分比。|Lotti OK e NOK con difetto registrato, ordinati per frequenza decrescente. Ogni lotto conta una volta; la curva indica la percentuale cumulata.
+Pour enregistrer un défaut sur un lot OK dans Supabase, exécutez supabase-lot-ok-defects.sql, puis réessayez.|To save a defect on an OK lot in Supabase, run supabase-lot-ok-defects.sql, then retry.|لحفظ عيب في دفعة OK في Supabase، نفّذ supabase-lot-ok-defects.sql ثم أعد المحاولة.|要在 Supabase 中为 OK 批次保存缺陷，请执行 supabase-lot-ok-defects.sql 后重试。|Per salvare un difetto su un lotto OK in Supabase, esegui supabase-lot-ok-defects.sql e riprova.
 Rapport d’anomalie|Anomaly report|تقرير عدم المطابقة|异常报告|Rapporto di anomalia
 Nouveau rapport|New report|تقرير جديد|新建报告|Nuovo rapporto
 Retour aux contrôles|Back to inspections|العودة إلى الفحوص|返回检验|Torna ai controlli

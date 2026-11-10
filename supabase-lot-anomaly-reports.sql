@@ -26,9 +26,9 @@ begin
     raise exception 'Rapport d’anomalie invalide.';
   end if;
   foreach field_name in array array['root_cause','immediate_action','immediate_effectiveness','corrective_action','corrective_effectiveness'] loop
-    if not coalesce(jsonb_typeof(new.anomaly_report->field_name) = 'string'
-        and btrim(new.anomaly_report->>field_name) <> '', false) then
-      raise exception 'Rapport incomplet : %', field_name;
+    -- Descriptions may be empty; keep the report shape and text types valid.
+    if not coalesce(jsonb_typeof(new.anomaly_report->field_name) = 'string', false) then
+      raise exception 'Champ du rapport invalide : %', field_name;
     end if;
   end loop;
   return new;

@@ -8,7 +8,7 @@ Renseigner en haut le département, l’OF, la date de contrôle, la référence
 
 - Tous les renseignements de contexte, le numéro de lot, les quantités, la décision et le qualiticien sont obligatoires.
 - Les quantités sont des entiers positifs. L’échantillon ne peut pas dépasser la quantité du lot.
-- **OK** apparaît en vert. Le lot entier est conforme ; le défaut et l’action sont vidés.
+- **OK** apparaît en vert. Le lot entier est accepté ; un défaut peut être renseigné facultativement et reste conservé lors d’un changement de décision. L’action est vidée.
 - **NOK** apparaît en rouge. Le lot entier est bloqué ; un défaut et une action **Tri**, **Rebut** ou **Dérogation** sont obligatoires.
 - L’action enregistre la disposition choisie. Elle ne transforme pas automatiquement une décision NOK en OK, y compris pour une dérogation. Modifier explicitement la décision après une nouvelle validation.
 - Un même lot ne peut pas être enregistré deux fois pour le même département, OF, référence et client. Utiliser **Modifier** pour corriger le contrôle existant ; son identifiant est conservé.
@@ -21,13 +21,15 @@ Pour un contrôle NOK, **Rapport d’anomalie** apparaît directement dans la co
 
 La référence, l’OF, la date, le département, le client, le numéro de lot, le défaut et le qualiticien sont repris automatiquement. Compléter la cause racine, l’action immédiate, son efficacité, l’action corrective et son efficacité. **Enregistrer le rapport** permet de reprendre le document plus tard. **Enregistrer et télécharger le PDF** conserve d’abord le rapport, puis télécharge le fichier. Si le téléchargement échoue, le rapport enregistré reste disponible.
 
-Les cinq descriptions sont des champs libres obligatoires, avec une indication du contenu attendu. Les efficacités se décrivent séparément des actions. En cas de champ manquant, il est signalé et le premier champ à compléter reçoit le focus ; les informations du lot restent préremplies en lecture seule.
+Les cinq descriptions sont des champs libres facultatifs, avec une indication du contenu attendu. Un rapport peut être enregistré avec certains champs vides, ou avec les cinq descriptions vides, puis complété ou corrigé plus tard. Les efficacités se décrivent séparément des actions. Les informations du lot restent préremplies en lecture seule. L’export PDF accepte également les descriptions vides ; le mode réunion les représente par un tiret.
 
 Un rapport est conservé dans `lot_inspections.anomaly_report` (ou avec le lot dans le stockage local). Son identité et ses informations initiales sont préservées lors des modifications ; un passage ultérieur du lot à OK conserve le rapport et son accès. Une sauvegarde de rapport partagé ne réécrit pas les quantités du lot et vérifie que le contrôle n’a pas été modifié depuis son ouverture.
 
-Pour une base existante, exécuter `supabase-lot-anomaly-reports.sql` après la migration LOT. Ce script ajoute la colonne et valide les rapports sans supprimer les lots existants. Les rapports font partie du transfert des contrôles locaux. Le PDF utilise la police libre Noto Sans (licence dans `src/assets/fonts/OFL.txt`) pour les textes français et leurs accents.
+Pour une base existante, exécuter `supabase-lot-anomaly-reports.sql` après la migration LOT. Pour autoriser les champs vides sur une base déjà installée, exécuter `supabase-lot-optional-report-fields.sql` (ou réexécuter la version actuelle de `supabase-lot-anomaly-reports.sql`). Ces scripts conservent les lots et rapports existants, ainsi que les contrôles de liaison au lot et de création sur NOK. Les rapports font partie du transfert des contrôles locaux. Le PDF utilise la police libre Noto Sans (licence dans `src/assets/fonts/OFL.txt`) pour les textes français et leurs accents.
 
 ## Graphique
+
+En bas de la page, **Pareto des défauts** regroupe les contrôles du département et du mois affichés qui ont un défaut renseigné, **OK et NOK réunis**. Les barres indiquent le nombre de lots par défaut, du plus fréquent au moins fréquent ; la courbe montre le pourcentage cumulé et un repère à 80 %. Chaque contrôle compte une fois, sans pondération par la quantité du lot ni par l’échantillonnage. Les contrôles sans défaut sont exclus. Les variantes de casse et d’espacement d’un même libellé sont regroupées ; le champ libre est traité comme un seul libellé, sans découpage en plusieurs défauts. **Voir les données du Pareto** donne les valeurs du graphique dans un tableau.
 
 Deux histogrammes **Bilan du jour**, placés au-dessus du formulaire, affichent le département sélectionné : le **nombre de lots** contrôlés, acceptés (OK) et rejetés (NOK), puis les **quantités des lots** correspondantes. Chaque contrôle enregistré compte pour un lot ; les quantités additionnent les lots entiers, sans utiliser l’échantillonnage. Une dérogation reste comptée en NOK tant que la décision n’est pas explicitement modifiée.
 
@@ -41,6 +43,8 @@ Directement sous le tableau et son formulaire, **Évolution des blocages** affic
 
 Exécuter `supabase-lot-inspections.sql` dans le SQL Editor Supabase, puis actualiser la page LOT. Le script crée la table indépendante `public.lot_inspections`, ses contraintes et ses politiques de lecture, insertion et modification. Il peut être réappliqué sans supprimer les contrôles existants. Il reprend les rôles API actuels de l’application (`anon` et `authenticated`) et n’expose pas de suppression.
 
+Pour une base déjà installée, exécuter **`supabase-lot-ok-defects.sql`** afin d’autoriser un défaut facultatif sur un lot OK, puis actualiser. Cette migration remplace l’ancienne contrainte de décision et conserve les lots et les rapports. Les scripts `supabase-lot-inspections.sql` et `supabase-install-complete.sql` incluent aussi cette mise à jour. Un défaut et une action restent obligatoires en NOK ; un lot OK reste accepté même si un défaut est renseigné. Aucun rapport d’anomalie nouveau n’est créé pour une décision OK.
+
 Sans configuration Supabase, ou si la nouvelle table n’est pas encore installée, la page signale **Sauvegarde locale** : les contrôles sont conservés uniquement dans ce navigateur, sous la clé `quality_lot_inspections_v1`. Une erreur réseau ou d’accès à une table existante bloque l’enregistrement partagé ; elle n’active pas silencieusement le mode local.
 
 Après installation de la table, **Transférer … contrôle(s) local(aux)** permet de copier les contrôles locaux dans Supabase. Les identifiants sont conservés ; le stockage local n’est nettoyé qu’après confirmation des identifiants enregistrés. Une éventuelle erreur doit être vérifiée avant une nouvelle tentative.
@@ -49,6 +53,8 @@ Les contrôles LOT sont indépendants des saisies de production : ils ne modifie
 
 ## Vérification
 
-`node --test tests/lotInspections.test.mjs` vérifie la validation, les calculs, le stockage local, le mode sans table et le transfert.
+`node --test tests/lotInspections.test.mjs` vérifie la validation, les calculs, le stockage local, le mode sans table, le transfert, les défauts facultatifs en OK et le classement du Pareto avec cumul.
 
 Les tests optionnels utilisent `JSDOM_MODULE` (vers `jsdom/lib/api.js`) et `PGLITE_MODULE` (vers `@electric-sql/pglite/dist/index.js`) : `node --test tests/lotInspections-ui.test.mjs tests/lotInspections-sql.test.mjs`. Ils n’accèdent jamais à Supabase. La géométrie des graphiques est simulée dans le test d’interface.
+
+`tests/lotOkDefects-sql.test.mjs` vérifie la migration d’une ancienne contrainte, la sauvegarde d’un défaut sur un lot OK, le maintien des validations NOK et de l’échantillonnage, ainsi que la conservation des rapports lors des réapplications des scripts d’installation. Le test d’interface vérifie aussi le Pareto après sauvegarde, changement de décision, rechargement et filtrage par département et mois.

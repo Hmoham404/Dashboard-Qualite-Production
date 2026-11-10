@@ -11,7 +11,7 @@ const sheets = [
     completed_at: 'Date de validation', created_at: 'Date de création',
   }],
   ['Heures de tri', 'sorting_hours', {
-    id: 'Identifiant', sorting_date: 'Date', department: 'Departement', hours: 'Heures de tri', headcount: 'Effectif',
+    id: 'Identifiant', sorting_date: 'Date', department: 'Departement', client_name: 'Client', product_reference: 'Reference produit', lot_number: 'Numéro de lot', hours: 'Heures de tri', headcount: 'Effectif', person_hours: 'Heures-personnes',
     good_qty: 'Qte bonne après tri', scrap_qty: 'Qte rebut après tri', created_at: 'Date de création',
   }],
   ['Réclamations', 'customer_complaints', {
@@ -33,7 +33,8 @@ export function buildMonthlyWorkbook(snapshot, { month, closedAt = null, t = (va
     const records = (snapshot[key] || []).map((row) => Object.fromEntries(Object.entries(columns).map(([field, label]) => {
       const value = field === 'article_reference'
         ? row.article_reference || String(row.note || '').match(/^REF_ARTICLE:\s*(.*)$/m)?.[1]?.trim()
-        : field === 'client_name' ? row.client_name || extractClientName(row.note) : row[field];
+        : field === 'client_name' ? row.client_name || extractClientName(row.note)
+          : field === 'person_hours' ? row.headcount == null ? null : Math.round(Number(row.hours || 0) * Number(row.headcount) * 100) / 100 : row[field];
       return [t(label), value != null && typeof value === 'object' ? JSON.stringify(value) : value ?? null];
     })));
     const headers = Object.values(columns).map((label) => t(label));

@@ -1,14 +1,14 @@
 ﻿# Analyse du projet — Qualité & Production
 
-Revue actualisée le **9 novembre 2026**, pour préparer la suite du développement.
+Revue actualisée le **10 novembre 2026**, pour préparer la suite du développement.
 
-Périmètre : code local, migrations SQL, modifications Git en cours, tests et compilation isolée. Aucun accès à Supabase, aucune migration appliquée, aucune modification applicative. Le contenu de `.env`, les classeurs sources, le rendu navigateur et le rendu PDF n'ont pas été examinés. Les modifications préexistantes sont conservées.
+Périmètre : code local, migrations SQL, état Git, tests et compilation isolée. Aucun accès à Supabase, aucune migration appliquée, aucune modification applicative. Le contenu de `.env`, les classeurs sources, le rendu navigateur et le rendu PDF n'ont pas été examinés. Le dépôt était propre au début de la revue ; la compilation de vérification crée des fichiers non suivis dans `tmp/`.
 
 ## État général
 
-Le projet dispose d'une base fonctionnelle étendue et compile. Résultat des tests : **36 tests, 28 réussites, 1 échec, 7 ignorés**. L'état réel des migrations et des droits de la base distante reste inconnu.
+Le projet dispose d'une base fonctionnelle étendue et compile. Résultat des tests : **39 tests, 29 réussites, 1 échec, 9 ignorés**. L'état réel des migrations et des droits de la base distante reste inconnu.
 
-Des modifications en cours concernent LOT, les rapports d'anomalie, le PDF, les traductions, les styles et les dépendances. Plusieurs nouveaux fichiers sont encore non suivis par Git et devront faire partie d'une livraison complète.
+Les modules LOT, rapports d'anomalie et PDF, ainsi que le script d'installation SQL complète, sont désormais suivis par Git. Aucun changement applicatif non validé n'était présent au début de cette revue.
 
 ## Architecture et périmètre fonctionnel
 
@@ -29,7 +29,7 @@ Cinq langues sont déclarées : français, anglais, arabe, italien et chinois, a
 - `src/LotWorkspacePage.jsx`, `src/lotInspections.js` : interface LOT, validation, stockage et transfert.
 - `src/AnomalyReportPage.jsx`, `src/anomalyReports.js`, `src/anomalyReportPdf.js` : formulaire, sauvegarde et génération PDF.
 - `src/i18n.js`, `src/styles.css` : traductions et styles partagés.
-- `supabase-*.sql`, `LOT.md`, `MONTHLY-ARCHIVES.md` : schéma, migrations et documentation métier.
+- `supabase-*.sql`, `LOT.md`, `MONTHLY-ARCHIVES.md` : schéma, migrations et documentation métier. `supabase-install-complete.sql` regroupe l'installation et la mise à jour des huit tables ; ses deux tests SQL sont présents mais ignorés dans cette exécution.
 
 ### Configuration et mode local
 
@@ -41,7 +41,7 @@ Sans Supabase, production et clôtures utilisent localStorage ; les sauvegardes 
 
 ### P1 — Accès anonymes ouverts dans les scripts SQL
 
-Preuves : `supabase-schema.sql:93–123`, `supabase-lot-inspections.sql:33–41`, `supabase-monthly-archives.sql:54–90`.
+Preuves : `supabase-schema.sql:93–123`, `supabase-lot-inspections.sql:29–35`, `supabase-monthly-archives.sql:54–90`, `supabase-install-complete.sql:106–170`, `:226–261`, `:294–302`.
 
 Les politiques utilisent largement `using (true)` et `with check (true)`. LOT accorde explicitement lecture, insertion et modification à `anon` et `authenticated`. La fonction de clôture, déclarée `security definer`, est exécutable par ces deux rôles. Aucun parcours d'authentification utilisateur n'a été trouvé.
 
@@ -69,13 +69,13 @@ Action : traduire textes et attributs restants puis étendre la vérification au
 
 `package.json` propose `dev`, `build` et `preview`, sans commande de test ni lint. Les tests utilisent Babel et esbuild via des dépendances transitives. jsdom et PGlite sont absents, et `JSDOM_MODULE` / `PGLITE_MODULE` ne sont pas configurés pour cette exécution.
 
-Les 7 tests ignorés concernent **3 tests SQL et 4 tests d'interface**. Une compilation réussie ne valide pas ces parcours.
+Les **9 tests ignorés** concernent **5 tests SQL et 4 tests d'interface**. Ils dépendent des variables `PGLITE_MODULE` et `JSDOM_MODULE`, non configurées pour cette exécution. Une compilation réussie ne valide pas ces parcours.
 
 Action : déclarer les dépendances de test et fournir des commandes reproductibles pour les tests métier, interface et SQL.
 
 ### P2 — Hygiène du dépôt
 
-Git suit **13 131 fichiers de `node_modules`**, trois fichiers de `dist` et `.env`. Aucun `.gitignore` à la racine. Le contenu de `.env` n'a pas été examiné : ce constat ne démontre pas la présence d'un secret privilégié.
+Git suit **18 038 fichiers de `node_modules`**, trois fichiers de `dist` et `.env`. Aucun `.gitignore` à la racine. Le contenu de `.env` n'a pas été examiné : ce constat ne démontre pas la présence d'un secret privilégié.
 
 Action : préparer un nettoyage Git conservant les fichiers locaux, ignorer dépendances, sorties de build et configuration locale, puis vérifier les types de clés avant publication. Préserver les modifications en cours.
 
@@ -83,7 +83,7 @@ Action : préparer un nettoyage Git conservant les fichiers locaux, ignorer dép
 
 `importExcel` existe (`src/main.jsx:1188`), sans appel d'interface ni champ de fichier associé trouvé. Les deux classeurs présents à la racine n'ont pas été analysés.
 
-Le bundle principal compilé mesure **1 368,60 ko**, soit **395,11 ko gzip** ; Vite signale sa taille. jsPDF est déjà importé dynamiquement. Excel et les vues principales sont des pistes de découpage. Plusieurs chargements relisent les historiques complets avant filtrage local.
+Le bundle principal compilé mesure **1 379,80 ko**, soit **398,49 ko gzip** ; Vite signale sa taille. jsPDF est déjà importé dynamiquement. Excel et les vues principales sont des pistes de découpage. Plusieurs chargements relisent les historiques complets avant filtrage local.
 
 Action : confirmer le besoin d'import avant de le raccorder avec aperçu et validation ; extraire progressivement sauvegardes et règles métier de `main.jsx`, puis mesurer les volumes et le chargement avant optimisation.
 
@@ -96,12 +96,11 @@ Deux anciens constats ne décrivent plus le code actuel :
 
 Restent également présents : pagination et remontée des erreurs de lecture, dates civiles, export mensuel stable même pour un mois vide, distinction entre effectif inconnu et nul, filtre client, évolution des défauts et validations LOT. Les tests métier correspondants passent.
 
-## Vérifications du 9 novembre 2026
+## Vérifications du 10 novembre 2026
 
-- `node --test tests/*.test.mjs` : **36 tests, 28 réussites, 1 échec, 7 ignorés**. Échec de traduction ; tests optionnels non exécutés faute des modules configurés.
-- Compilation standard vers `tmp/project-review-build-2026-11-09` : premier essai bloqué par les permissions de lecture du chargeur de configuration esbuild.
-- `node node_modules/vite/bin/vite.js build --configLoader native --outDir tmp/project-review-build-2026-11-09` : **réussite**, 2 565 modules transformés, avertissement de taille. Le chargeur natif évite cette limitation sans élargir les permissions ni modifier la configuration. `dist` n'a pas été remplacé.
-- Reproduction du conflit LOT : **confirmée en stockage mémoire isolé**, sans écriture de données applicatives.
+- `node --test tests/*.test.mjs` : **39 tests, 29 réussites, 1 échec, 9 ignorés**. Échec de traduction sur « Target du département : » ; tests SQL et interface non exécutés faute des modules configurés.
+- `node node_modules/vite/bin/vite.js build --configLoader native --outDir tmp/project-review-build-2026-11-10` : **réussite**, 2 566 modules transformés, avertissement de taille. Le chargeur natif est repris de la revue précédente ; `npm run build` n'a pas été relancé lors de cette revue. `dist` n'a pas été remplacé.
+- Reproduction du conflit LOT : **confirmée à nouveau en stockage mémoire isolé**, sans écriture de données applicatives. Après sauvegarde d'une cause « new », l'édition de l'échantillon depuis une copie ancienne rétablit la cause « old ».
 
 Limites : aucun contrôle navigateur, rendu PDF, test SQL exécuté ou accès distant ; aucun audit des classeurs ni du contenu de `.env`.
 
@@ -110,7 +109,7 @@ Limites : aucun contrôle navigateur, rendu PDF, test SQL exécuté ou accès di
 1. Rendre les tests reproductibles et corriger les traductions en échec pour établir une référence fiable.
 2. Protéger les modifications LOT contre les conflits, avec un test de non-régression sur les rapports.
 3. Définir les rôles métier et sécuriser Supabase avant exposition partagée en production.
-4. Nettoyer le suivi Git en préservant les fichiers locaux et inclure tous les nouveaux fichiers nécessaires aux rapports.
+4. Nettoyer le suivi Git en préservant les fichiers locaux ; les fichiers nécessaires aux rapports et à l'installation complète sont déjà suivis.
 5. Vérifier visuellement LOT et les PDF, puis traiter la prochaine fonctionnalité ; extraire progressivement les responsabilités de `main.jsx`.
 
 Démarrage : `npm run dev`. Tests actuels : `node --test tests/*.test.mjs`. Compilation standard : `npm run build` ; dans le bac à sable observé, employer le chargeur natif comme indiqué ci-dessus.

@@ -7,7 +7,7 @@ import { buildMonthlyWorkbook } from '../src/monthlyExport.js';
 test('the monthly workbook round-trips all four data types, details and headcounts', () => {
   const snapshot = buildMonthSnapshot('2026-10', {
     production: [{ production_date: '2026-10-31', good_qty: 150, note: 'REF_ARTICLE: A\nCLIENT: Client exemple\nNOTE_QUALITE: OK', defect_breakdown: [{ type: 'Bavure', qty: 2 }] }, { production_date: '2026-11-01', good_qty: 999 }],
-    sorting: [{ sorting_date: '2026-10-31', hours: 8, headcount: 0 }, { sorting_date: '2026-10-30', hours: 2, headcount: null }],
+    sorting: [{ sorting_date: '2026-10-31', hours: 8, headcount: 0, client_name: 'KIKO', product_reference: 'REF-1', lot_number: 'LOT-1' }, { sorting_date: '2026-10-30', hours: 2, headcount: null }, { sorting_date: '2026-10-31', hours: 2, headcount: 3, client_name: 'Belloti' }],
     complaints: [{ complaint_date: '2026-10-02', details: 'Une réclamation' }],
     assignments: [{ shift_date: '2026-10-31', operator_names: 'A / B' }],
   });
@@ -24,6 +24,13 @@ test('the monthly workbook round-trips all four data types, details and headcoun
   const sorting = XLSX.utils.sheet_to_json(read.Sheets['Heures de tri'], { defval: null });
   assert.equal(sorting[0].Effectif, 0);
   assert.equal(sorting[1].Effectif, null);
+  assert.equal(sorting.length, 3);
+  assert.equal(sorting[0].Client, 'KIKO');
+  assert.equal(sorting[0]['Reference produit'], 'REF-1');
+  assert.equal(sorting[0]['Numéro de lot'], 'LOT-1');
+  assert.equal(sorting[0]['Heures-personnes'], 0);
+  assert.equal(sorting[1]['Heures-personnes'], null);
+  assert.equal(sorting[2]['Heures-personnes'], 6);
   assert.equal(XLSX.utils.sheet_to_json(read.Sheets['Réclamations'])[0]['Détail'], 'Une réclamation');
   assert.equal(XLSX.utils.sheet_to_json(read.Sheets['Affectation MOD'])[0]['Nom MOD'], 'A / B');
 });

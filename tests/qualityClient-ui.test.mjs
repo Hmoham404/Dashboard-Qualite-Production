@@ -16,7 +16,12 @@ test('client filtering covers departments, charts and history; quality client su
   const otherClient = { ...row, id: 'other-client', work_order: 'OF2', good_qty: 500, scrap_qty: 40, note: 'REF_ARTICLE: ARTICLE2\nCLIENT: Autre client' };
   const welding = { ...row, id: 'welding-client', department: 'Soudure', work_order: 'OF3' };
   const otherWelding = { ...otherClient, id: 'welding-other-client', department: 'Soudure', work_order: 'OF4' };
-  const db = { tables: { production_entries: [row, otherClient, welding, otherWelding], machines: [], product_references: [], mod_assignments: [], monthly_closures: [], customer_complaints: [], sorting_hours: [], lot_inspections: [] }, writes: [] };
+  const unnamed = { ...otherClient, id: 'unnamed-client', work_order: 'OF5', scrap_qty: 8, note: '' };
+  const namedTous = { ...otherClient, id: 'named-tous', work_order: 'OF6', scrap_qty: 2, note: 'CLIENT: Tous' };
+  const archived = { ...otherClient, id: 'archived-client', production_date: '2000-01-01', work_order: 'OLD-OF', scrap_qty: 900, note: 'CLIENT: Client ancien' };
+  const kikoRows = ['kiko', 'Kiko', 'KIKO'].map((client, index) => ({ ...otherClient, id: `kiko-${index}`, work_order: `KIKO-OF-${index}`, scrap_qty: (index + 1) * 10, note: `CLIENT: ${client}` }));
+  const sorting = { id: 'sorting-kiko', sorting_date: row.production_date, department: 'Assemblage', client_name: 'KIKO', product_reference: 'SORT-REF', lot_number: 'SORT-LOT', hours: 3, headcount: 2, good_qty: 50, scrap_qty: 4 };
+  const db = { tables: { production_entries: [row, otherClient, welding, otherWelding, unnamed, namedTous, archived, ...kikoRows], machines: [], product_references: [], mod_assignments: [], monthly_closures: [], customer_complaints: [], sorting_hours: [sorting], lot_inspections: [] }, writes: [] };
   const bundlePath = fileURLToPath(new URL(`.quality-client-ui-${process.pid}.mjs`, import.meta.url));
   let root;
   try {
@@ -25,6 +30,7 @@ test('client filtering covers departments, charts and history; quality client su
     }
     window.requestAnimationFrame = (callback) => { callback(); return 0; };
     window.HTMLElement.prototype.scrollIntoView = () => {};
+    window.scrollTo = () => {};
     const style = document.createElement('style');
     style.textContent = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
     document.head.appendChild(style);
@@ -45,12 +51,19 @@ test('client filtering covers departments, charts and history; quality client su
           export const Area=Empty,Bar=Empty,CartesianGrid=Empty,Cell=Empty,DefaultLegendContent=Empty,LabelList=Empty,Legend=Empty,Line=Empty,Rectangle=Empty,ReferenceLine=Empty,Tooltip=Empty,XAxis=Empty,YAxis=Empty;
         ` : `
           export const createClient=()=>({from(table) {
-            let payload;
+            let payload, deletedId;
             const db=globalThis.__qualityClientDB;
             const query={select(){return this;},order(){return this;},
-              range(from,to){return Promise.resolve({data:db.tables[table].slice(from,to+1),count:db.tables[table].length,error:null});},
+              range(from,to){if(table==='customer_complaints'&&db.complaintLoadError)return Promise.resolve({data:null,error:{code:'42P01',message:'customer_complaints unavailable'}});return Promise.resolve({data:db.tables[table].slice(from,to+1),count:db.tables[table].length,error:null});},
               insert(rows){payload=rows;return this;},upsert(rows){payload=rows;return this;},
+              delete(){return this;},eq(key,value){if(table==='customer_complaints'&&key==='id')deletedId=value;return this;},
+              single:async()=>{
+                if(db.complaintFailure)throw new Error(db.complaintFailure);
+                const saved={...payload,id:globalThis.crypto.randomUUID()};
+                db.tables[table].push(saved);return {data:saved,error:null};
+              },
               then(resolve,reject){return Promise.resolve().then(()=>{
+                if(deletedId){db.tables[table]=db.tables[table].filter(row=>row.id!==deletedId);return {error:null};}
                 for(const row of payload) {
                   if('client_name' in row) throw new Error('Unknown database column client_name');
                   db.writes.push(structuredClone(row));
@@ -71,7 +84,7 @@ test('client filtering covers departments, charts and history; quality client su
     const click = async (node) => { assert.ok(node); await act(async () => node.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))); };
     const change = async (node, value) => {
       await act(async () => {
-        const prototype = node.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype;
+        const prototype = node.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : node.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
         Object.getOwnPropertyDescriptor(prototype, 'value').set.call(node, value);
         node.dispatchEvent(new window.Event('input', { bubbles: true }));
         node.dispatchEvent(new window.Event('change', { bubbles: true }));
@@ -83,7 +96,122 @@ test('client filtering covers departments, charts and history; quality client su
     assert.ok([...clientFilter().options].some((option) => option.value === 'Client original'));
     assert.equal(window.getComputedStyle(clientFilter()).height, '42px');
     assert.equal(window.getComputedStyle(resetButton()).height, '42px');
+    assert.ok(document.querySelector('.topbar .site-meeting-toggle'), 'Meeting button is in the top header');
+    assert.equal(document.querySelector('.site-meeting-controls'), null, 'No bottom meeting bar');
+    assert.deepEqual([...document.querySelectorAll('.topbar .workspace-navigation a')].map((link) => link.hash), ['', '#lot', '#reports']);
+    assert.ok(!/Supabase|\.env|\.sql\b/.test(document.body.textContent), 'Backend configuration is not displayed in the dashboard');
+    assert.equal(window.getComputedStyle(document.querySelector('.history-top-button')).minHeight, '40px');
+    const complaintPanel = () => document.querySelector('.customer-complaints');
+    const complaintTotal = () => document.querySelector('[data-complaint-total]').textContent;
+    const complaintRows = () => [...document.querySelectorAll('.complaints-table tbody tr')];
+    const day = () => document.querySelector(`[data-complaint-date="${row.production_date}"]`);
+    assert.equal(complaintPanel().querySelector('svg[data-chart-rows]'), null, 'The binary chart is replaced by a calendar');
+    assert.equal(complaintTotal(), '0');
+    await click(day());
+    assert.equal(document.querySelector('.complaint-modal'), null, 'Day selection only consults records');
+    await click(document.querySelector('.complaints-add'));
+    assert.equal(document.querySelector('.complaint-window input[type="date"]').value, row.production_date);
+    await change(document.querySelector('.complaint-window textarea'), 'KIKO — Rayure miroir');
+    await submit('.complaint-window');
+    assert.equal(document.querySelector('.complaint-modal'), null);
+    assert.equal(complaintTotal(), '1');
+    await click(document.querySelector('.complaints-add'));
+    await change(document.querySelector('.complaint-window textarea'), 'Belloti — Bavure');
+    db.complaintFailure = 'Connexion interrompue';
+    await submit('.complaint-window');
+    assert.equal(complaintTotal(), '1', 'A failed save never increments the counters');
+    assert.equal(document.querySelector('.complaint-window textarea').value, 'Belloti — Bavure', 'The draft survives a failed save');
+    db.complaintFailure = '';
+    await submit('.complaint-window');
+    assert.equal(complaintTotal(), '2');
+    assert.equal(day().querySelector('.complaint-day-count').textContent, '2', 'Several complaints can be recorded on one day');
+    assert.equal(document.querySelector('[data-complaint-days]').textContent, '1');
+    await change(document.querySelector('.complaint-search input'), 'kiko');
+    assert.equal(complaintRows().length, 1);
+    assert.match(complaintRows()[0].textContent, /Rayure/);
+    assert.equal(complaintTotal(), '2', 'Searching the register does not change monthly totals');
+    await change(document.querySelector('.complaint-search input'), '');
+    await click(complaintRows()[0].querySelector('button'));
+    await click(document.querySelector('[aria-labelledby="complaint-delete-title"] .danger-button'));
+    assert.equal(complaintTotal(), '1');
+    await click(document.querySelector('.month-actions button'));
+    assert.equal(complaintTotal(), '1', 'Calendar totals persist when data is reloaded');
+    assert.equal(db.tables.customer_complaints.length, 1);
+    db.complaintLoadError = true;
+    await click(document.querySelector('.month-actions button'));
+    assert.equal(document.querySelector('[data-complaint-total]'), null, 'Unavailable data is not represented by a zero counter');
+    assert.match(complaintPanel().textContent, /Chargement impossible/);
+    assert.ok(!/Supabase|\.sql|customer_complaints/.test(complaintPanel().textContent), 'Load errors contain no backend details');
+    db.complaintLoadError = false;
+    await click(document.querySelector('.month-actions button'));
+    assert.equal(complaintTotal(), '1');
+    const originalChart = document.querySelector('.defect-evolution-panel [data-chart-rows]');
+    await click(document.querySelector('.topbar .site-meeting-toggle'));
+    assert.ok(document.querySelector('.site-frame').classList.contains('site-meeting-active'));
+    assert.equal(document.querySelector('.defect-evolution-panel [data-chart-rows]'), originalChart, 'Meeting mode keeps the original site charts');
+    assert.equal(window.getComputedStyle(document.querySelector('.sheet-panel')).display, 'none');
+    assert.equal(document.querySelector('.sheet-panel fieldset').disabled, true);
+    assert.equal(window.getComputedStyle(document.querySelector('.incomplete-panel')).display, 'none', 'Completion workflow is hidden in meeting mode');
+    assert.equal(document.querySelectorAll('.production-detail-panel tbody tr').length,
+      db.tables.production_entries.filter((entry) => entry.department === 'Injection' && entry.production_date.startsWith(row.production_date.slice(0, 7))).length,
+      'Meeting mode displays every filtered record, including incomplete entries, without the usual three-row limit');
+    assert.equal(document.querySelector('.sorting-heading > button'), null, 'No sorting entry button in meeting mode');
+    assert.equal(document.querySelector('.complaints-add, .complaints-table tbody button'), null, 'Meeting mode has no complaint entry or deletion controls');
+    await click(day());
+    assert.ok(document.querySelector('.complaint-search input'), 'Calendar consultation and search remain available in meeting mode');
+    assert.equal(complaintTotal(), '1');
+    assert.ok(!document.querySelector('.complaint-chart-panel').textContent.includes('Double-cliquez'));
+    await click(document.querySelector('.history-top-button'));
+    assert.ok(document.querySelector('.history-window'), 'All monthly records remain accessible in history');
+    assert.equal(window.getComputedStyle(document.querySelector('.history-window tbody td:last-child')).display, 'none', 'History has no visible editing controls');
+    await click(document.querySelector('.history-window-head .icon-only'));
+    assert.equal(clientFilter().disabled, false, 'Data filters remain usable');
+    await act(async () => { window.location.hash = '#lot'; window.dispatchEvent(new window.HashChangeEvent('hashchange')); });
+    assert.ok(document.querySelector('.site-frame').classList.contains('site-meeting-active'), 'Meeting mode persists when navigating to LOT');
+    assert.equal(document.getElementById('lot-number'), null, 'LOT has no entry fields in meeting mode');
+    assert.equal(document.querySelector('.lot-page form'), null);
+    assert.equal(document.querySelector('.lot-context-fields').disabled, false, 'LOT department selection remains usable');
+    assert.ok(document.querySelector('.lot-page-header .site-meeting-toggle'), 'LOT has the same top meeting control');
+    await act(async () => { window.location.hash = '#reports'; window.dispatchEvent(new window.HashChangeEvent('hashchange')); });
+    assert.equal(document.querySelector('.lot-page h1').textContent, 'Rapports d’anomalie');
+    assert.ok(document.querySelector('.lot-report-index'), 'Reports have their own complete page');
+    assert.equal(document.querySelector('.lot-entry-panel'), null);
+    assert.equal(document.querySelector('.lot-page .workspace-navigation [aria-current="page"]').hash, '#reports');
+    assert.equal(document.title, 'Rapports d’anomalie — LOT');
+    assert.ok(document.querySelector('.site-meeting-active'), 'Meeting mode also persists on the reports page');
+    await act(async () => { window.location.hash = ''; window.dispatchEvent(new window.HashChangeEvent('hashchange')); });
+    await click(document.querySelector('.site-meeting-exit'));
+    assert.ok(!document.querySelector('.site-frame').classList.contains('site-meeting-active'));
+    assert.equal(document.querySelector('.sheet-panel fieldset').disabled, false, 'Leaving meeting mode restores editing');
+    assert.equal(document.querySelectorAll('.production-detail-panel tbody tr').length, 3, 'Leaving meeting mode restores the normal table view');
+    const sortingData = () => JSON.parse(document.querySelector('.sorting-hours-panel [data-chart-rows]').getAttribute('data-chart-rows'));
+    assert.equal(sortingData().find((day) => day.date === row.production_date).total, 3, 'The dashboard loads operation fields from Supabase into the sorting chart');
+    assert.match(document.querySelector('.sorting-operations-table').textContent, /KIKO/);
+    const scrapClient = () => document.getElementById('scrap-client');
+    const scrapData = () => JSON.parse(document.querySelector('.defect-evolution-panel [data-chart-rows]').getAttribute('data-chart-rows'));
+    const scrapTotal = () => scrapData().reduce((sum, day) => sum + day.total, 0);
+    assert.deepEqual([...scrapClient().options].map((option) => option.value), ['', 'Autre client', 'Client original', 'KIKO', 'Tous'], 'Only clients recorded in the displayed month are offered, with one KIKO option');
+    assert.equal(scrapTotal(), 110, 'All clients includes production without a recorded client');
+    await change(scrapClient(), 'KIKO');
+    assert.equal(scrapTotal(), 60, 'The single KIKO option includes kiko, Kiko and KIKO records');
+    assert.equal(clientFilter().value, 'KIKO');
+    await change(scrapClient(), 'Autre client');
+    assert.equal(scrapTotal(), 40);
+    assert.equal(clientFilter().value, 'Autre client', 'The chart filter stays synchronized with the general filter');
+    await change(scrapClient(), 'Tous');
+    assert.equal(scrapTotal(), 2, 'A client named Tous remains distinct from the all-clients choice');
+    await change(scrapClient(), '');
+    assert.equal(scrapTotal(), 110);
+    await change(document.querySelector('.defect-pareto-controls input[type="date"]'), row.production_date);
+    await change(scrapClient(), 'Autre client');
+    assert.deepEqual(scrapData(), [{ type: 'Bavure', count: 40 }], 'Daily defect detail uses the same client selection');
+    await change(scrapClient(), '');
+    assert.deepEqual(scrapData(), [{ type: 'Bavure', count: 110 }]);
+    await click([...document.querySelectorAll('.defect-mode-toggle button')].find((button) => button.textContent === 'Cumul'));
     await change(clientFilter(), 'Client original');
+    assert.equal(scrapClient().value, 'Client original', 'Changing the general filter updates the chart selector');
+    assert.equal(scrapTotal(), 0, 'A client without scrap has zero bars across the month');
+    assert.equal(sortingData().find((day) => day.date === row.production_date).total, 3, 'Sorting keeps its own client filters');
     assert.ok(document.querySelector('.production-detail-panel').textContent.includes('OF1'));
     assert.ok(!document.querySelector('.production-detail-panel').textContent.includes('OF2'));
     assert.ok(!document.querySelector('.incomplete-panel').textContent.includes('OF2'));

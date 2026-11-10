@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { loadLotInspections, lotDailySummary, lotInspectionPayload, lotStorageKey, lotTotals, lotTrend, readLocalLots, saveLotInspection, transferLocalLots, validateLotInspection } from '../src/lotInspections.js';
+import { loadLotInspections, lotDailySummary, lotDefectPareto, lotInspectionPayload, lotStorageKey, lotTotals, lotTrend, readLocalLots, saveLotInspection, transferLocalLots, validateLotInspection } from '../src/lotInspections.js';
 
 const form = { department: 'Injection', inspection_date: '2026-11-03', work_order: 'OF-1', product_reference: 'REF-1', client_name: 'Client A', lot_number: 'LOT-1', lot_qty: '100', sample_qty: '10', decision: 'OK', defect: '', corrective_action: '', inspector_name: 'Qualiticien A' };
 const storage = () => {
@@ -22,13 +22,65 @@ test('sampling and NOK validation reject incomplete or inconsistent controls', (
 test('an OK lot is fully conforming and a NOK lot is fully blocked, independently of its sample size', () => {
   const ok = lotInspectionPayload({ ...form, defect: 'Old defect', corrective_action: 'Tri' });
   const nok = lotInspectionPayload({ ...form, lot_number: 'LOT-2', lot_qty: '200', sample_qty: '5', decision: 'NOK', defect: 'Rayure', corrective_action: 'Dérogation' });
-  assert.equal(ok.defect, null);
+  assert.equal(ok.defect, 'Old defect');
   assert.equal(ok.corrective_action, null);
   assert.deepEqual(lotTotals([ok, nok]), { controlled: 300, conforming: 100, blocked: 200 });
   const trend = lotTrend([ok, nok], '2026-11');
   assert.equal(trend.length, 30);
   assert.deepEqual(trend[2], { date: '2026-11-03', controlled: 300, conforming: 100, blocked: 200 });
   assert.deepEqual(trend[0], { date: '2026-11-01', controlled: 0, conforming: 0, blocked: 0 });
+});
+
+test('OK defects are optional and survive saving, reloading, editing and transfer without blocking the lot', async () => {
+  const local = storage();
+  const ok = lotInspectionPayload({ ...form, defect: '  Rayure  ' });
+  assert.deepEqual(validateLotInspection(ok), []);
+  assert.equal(ok.defect, 'Rayure');
+  await saveLotInspection(null, 'local', ok, local);
+  assert.equal(readLocalLots(local)[0].defect, 'Rayure');
+  assert.deepEqual(lotTotals(readLocalLots(local)), { controlled: 100, conforming: 100, blocked: 0 });
+  const edited = lotInspectionPayload({ ...form, defect: 'Bavure' }, ok);
+  await saveLotInspection(null, 'local', edited, local);
+  let uploaded;
+  const uploader = { from: () => ({ upsert(rows) { uploaded = rows; return this; }, select: async () => ({ data: uploaded, error: null }) }) };
+  await transferLocalLots(uploader, readLocalLots(local), local);
+  assert.equal(uploaded[0].defect, 'Bavure');
+  assert.equal(uploaded[0].decision, 'OK');
+  assert.equal(uploaded[0].corrective_action, null);
+  assert.deepEqual(readLocalLots(local), []);
+  assert.equal(lotInspectionPayload({ ...form, defect: '   ' }).defect, null);
+});
+
+test('Pareto counts OK and NOK lots by normalized defect and orders frequencies with cumulative percentages', () => {
+  const rows = [
+    { ...form, decision: 'OK', defect: ' Rayure ', lot_qty: 900 },
+    { ...form, decision: 'NOK', defect: 'rayure', lot_qty: 10 },
+    { ...form, decision: 'OK', defect: 'Bavure' },
+    { ...form, decision: 'NOK', defect: 'Manque  matière' },
+    { ...form, decision: 'NOK', defect: 'Manque matière' },
+    { ...form, defect: null }, { ...form, defect: '  ' },
+  ];
+  const pareto = lotDefectPareto(rows);
+  assert.deepEqual(pareto, [
+    { defect: 'Manque matière', lots: 2, cumulativePercent: 40 },
+    { defect: 'Rayure', lots: 2, cumulativePercent: 80 },
+    { defect: 'Bavure', lots: 1, cumulativePercent: 100 },
+  ]);
+  assert.deepEqual(lotDefectPareto([]), []);
+  assert.deepEqual(lotDefectPareto([{ defect: null }]), []);
+  assert.equal(lotDefectPareto([{ defect: 'Défaut' }, { defect: 'De\u0301faut' }])[0].lots, 2);
+});
+
+test('an outdated shared LOT constraint explains the migration without losing local controls', async () => {
+  const local = storage();
+  const row = lotInspectionPayload({ ...form, defect: 'Rayure' });
+  await saveLotInspection(null, 'local', row, local);
+  const error = { code: '23514', message: 'violates check constraint "lot_inspections_check1"' };
+  const client = { from: () => ({ upsert() { return this; }, select() { return this; },
+    single: async () => ({ error }), then: (resolve) => Promise.resolve({ error }).then(resolve) }) };
+  await assert.rejects(saveLotInspection(client, 'remote', row, local), /supabase-lot-ok-defects.sql/);
+  await assert.rejects(transferLocalLots(client, [row], local), /supabase-lot-ok-defects.sql/);
+  assert.equal(readLocalLots(local)[0].id, row.id);
 });
 
 test('daily histograms separate lot counts from whole-lot quantities and isolate date and department', () => {

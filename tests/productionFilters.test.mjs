@@ -23,3 +23,28 @@ test('client options are unique and a client named Tous is distinct from the all
   assert.equal(filterProductionByClient(rows, '').length, 4);
   assert.equal(productionClientName({ note: 'CLIENT: \nNOTE_QUALITE: OK' }), '');
 });
+
+test('client spellings differing only in case, spacing or Unicode composition share one option and all their data', () => {
+  const rows = [
+    { client_name: ' kiko ', scrap_qty: 10 },
+    { note: 'CLIENT: Kiko', scrap_qty: 20 },
+    { client_name: 'KIKO', scrap_qty: 30 },
+    { client_name: 'Client  A' }, { note: 'CLIENT: client a' },
+    { client_name: 'Clie\u0301nt' }, { note: 'CLIENT: CLIÉNT' },
+    { client_name: 'KÍKO' }, { note: 'Sans client' },
+  ];
+  const before = structuredClone(rows);
+  const options = productionClients(rows);
+  assert.equal(options.filter((name) => name.toLowerCase() === 'kiko').length, 1);
+  assert.ok(options.includes('KIKO'));
+  assert.equal(options.length, 4);
+  for (const client of ['kiko', 'Kiko', 'KIKO', '  KiKo ']) {
+    const filtered = filterProductionByClient(rows, client);
+    assert.equal(filtered.length, 3);
+    assert.equal(filtered.reduce((sum, row) => sum + row.scrap_qty, 0), 60);
+  }
+  assert.equal(filterProductionByClient(rows, 'client a').length, 2);
+  assert.equal(filterProductionByClient(rows, 'clie\u0301nt').length, 2);
+  assert.equal(filterProductionByClient(rows, 'KÍKO').length, 1, 'Accented names stay distinct');
+  assert.deepEqual(rows, before, 'Grouping never rewrites recorded names');
+});

@@ -95,9 +95,30 @@ create table if not exists public.sorting_hours (
   headcount integer check (headcount >= 0),
   good_qty integer not null default 0 check (good_qty >= 0),
   scrap_qty integer not null default 0 check (scrap_qty >= 0),
-  created_at timestamptz not null default now(),
-  unique (sorting_date, department)
+  created_at timestamptz not null default now()
 );
+
+alter table public.sorting_hours add column if not exists client_name text;
+alter table public.sorting_hours add column if not exists product_reference text;
+alter table public.sorting_hours add column if not exists lot_number text;
+alter table public.sorting_hours add column if not exists headcount integer check (headcount >= 0);
+
+-- Remove the old daily aggregate uniqueness; every operation keeps its UUID.
+do $sorting_operations$
+declare previous_constraint record;
+begin
+  for previous_constraint in
+    select conname from pg_catalog.pg_constraint
+    where conrelid = 'public.sorting_hours'::regclass and contype = 'u'
+      and array_length(conkey, 1) = 2
+      and conkey @> array(select attnum from pg_catalog.pg_attribute
+        where attrelid = 'public.sorting_hours'::regclass and attname in ('sorting_date', 'department'))
+  loop
+    execute format('alter table public.sorting_hours drop constraint %I', previous_constraint.conname);
+  end loop;
+end $sorting_operations$;
+
+create index if not exists sorting_hours_date_department_idx on public.sorting_hours(sorting_date, department);
 
 alter table public.sorting_hours add column if not exists good_qty integer not null default 0 check (good_qty >= 0);
 alter table public.sorting_hours add column if not exists headcount integer check (headcount >= 0);
@@ -284,11 +305,34 @@ create table if not exists public.lot_inspections (
   inspector_name text not null check (btrim(inspector_name) <> ''),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (department, work_order, product_reference, client_name, lot_number),
-  check ((decision = 'OK' and corrective_action is null and defect is null)
-    or (decision = 'NOK' and btrim(coalesce(defect,'')) <> '' and corrective_action is not null
-      and corrective_action in ('Tri','Rebut','Dérogation')))
+  unique (department, work_order, product_reference, client_name, lot_number)
 );
+-- Earlier scripts generated an unnamed check constraint. Identify it by its
+-- three columns instead of depending on PostgreSQL's generated constraint name.
+do $lot_decision$
+declare
+  previous_constraint record;
+begin
+  for previous_constraint in
+    select conname from pg_catalog.pg_constraint
+    where conrelid = 'public.lot_inspections'::regclass and contype = 'c'
+      and (conname = 'lot_inspections_decision_details_check' or conname ~ '^lot_inspections_check[0-9]*$')
+      and array_length(conkey, 1) = 3
+      and conkey @> array(
+        select attnum from pg_catalog.pg_attribute
+        where attrelid = 'public.lot_inspections'::regclass
+          and attname in ('decision', 'defect', 'corrective_action')
+      )
+  loop
+    execute format('alter table public.lot_inspections drop constraint %I', previous_constraint.conname);
+  end loop;
+end $lot_decision$;
+
+alter table public.lot_inspections add constraint lot_inspections_decision_details_check
+  check ((decision = 'OK' and corrective_action is null)
+    or (decision = 'NOK' and btrim(coalesce(defect,'')) <> '' and corrective_action is not null
+      and corrective_action in ('Tri','Rebut','Dérogation')));
+
 alter table public.lot_inspections add column if not exists anomaly_report jsonb;
 create index if not exists lot_inspections_date_department_idx on public.lot_inspections(inspection_date, department);
 alter table public.lot_inspections enable row level security;
@@ -330,9 +374,9 @@ begin
     raise exception 'Rapport d’anomalie invalide.';
   end if;
   foreach field_name in array array['root_cause','immediate_action','immediate_effectiveness','corrective_action','corrective_effectiveness'] loop
-    if not coalesce(jsonb_typeof(new.anomaly_report->field_name) = 'string'
-        and btrim(new.anomaly_report->>field_name) <> '', false) then
-      raise exception 'Rapport incomplet : %', field_name;
+    -- Descriptions may be empty; keep the report shape and text types valid.
+    if not coalesce(jsonb_typeof(new.anomaly_report->field_name) = 'string', false) then
+      raise exception 'Champ du rapport invalide : %', field_name;
     end if;
   end loop;
   return new;

@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { anomalyFields, buildAnomalyReport, saveAnomalyReport, validateAnomalyReport } from '../src/anomalyReports.js';
+import { anomalyFields, buildAnomalyReport, saveAnomalyReport } from '../src/anomalyReports.js';
 import { lotInspectionPayload, lotStorageKey, readLocalLots, saveLotInspection } from '../src/lotInspections.js';
 
 export const reportFields = { root_cause: 'Réglage incorrect du moule.', immediate_action: 'Isoler le lot et trier les pièces.', immediate_effectiveness: 'Toutes les pièces du lot sont identifiées.', corrective_action: 'Corriger le réglage et mettre à jour la gamme.', corrective_effectiveness: 'Aucun défaut sur trois lots de validation.' };
 const form = { department: 'Injection', inspection_date: '2026-11-04', work_order: 'OF-2026-19', product_reference: 'REF-42', client_name: 'Client Démonstration', lot_number: 'LOT-001', lot_qty: 200, sample_qty: 20, decision: 'NOK', defect: 'Rayures', corrective_action: 'Tri', inspector_name: 'Qualiticien A' };
 const storage = () => { const values = new Map(); return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; };
 
-test('reports require all five descriptions and snapshot the saved NOK lot context', () => {
-  assert.equal(validateAnomalyReport({}).length, 5);
-  assert.deepEqual(validateAnomalyReport(reportFields), []);
-  for (const [key, label] of anomalyFields) assert.ok(validateAnomalyReport({ ...reportFields, [key]: ' ' }).includes(label));
+test('reports accept blank and partial descriptions while preserving the saved NOK lot context', () => {
   const lot = lotInspectionPayload(form);
+  const blank = buildAnomalyReport(lot);
+  for (const [key] of anomalyFields) assert.equal(blank[key], '');
+  const partial = buildAnomalyReport(lot, { root_cause: ' Cause identifiée. ', immediate_action: '  ' });
+  assert.equal(partial.root_cause, 'Cause identifiée.');
+  for (const [key] of anomalyFields.filter(([key]) => key !== 'root_cause')) assert.equal(partial[key], '');
   const report = buildAnomalyReport(lot, reportFields);
   assert.equal(report.lot_id, lot.id);
   assert.equal(report.context.product_reference, form.product_reference);
@@ -26,7 +28,14 @@ test('reports require all five descriptions and snapshot the saved NOK lot conte
 test('local report survives reload and subsequent OK validation without changing quantities', async () => {
   const local = storage();
   const lot = await saveLotInspection(null, 'local', lotInspectionPayload(form), local);
-  const saved = await saveAnomalyReport(null, 'local', lot, reportFields, local);
+  let saved = await saveAnomalyReport(null, 'local', lot, {}, local);
+  const reportId = saved.anomaly_report.id;
+  assert.ok(anomalyFields.every(([key]) => readLocalLots(local)[0].anomaly_report[key] === ''), 'A completely blank report survives reload');
+  saved = await saveAnomalyReport(null, 'local', saved, { root_cause: reportFields.root_cause }, local);
+  assert.equal(saved.anomaly_report.id, reportId);
+  assert.equal(readLocalLots(local)[0].anomaly_report.immediate_action, '');
+  saved = await saveAnomalyReport(null, 'local', saved, reportFields, local);
+  assert.equal(saved.anomaly_report.id, reportId, 'Completing a saved partial report preserves its identity');
   assert.equal(readLocalLots(local)[0].anomaly_report.root_cause, reportFields.root_cause);
   assert.equal(saved.lot_qty, 200);
   assert.equal(saved.decision, 'NOK');
@@ -49,10 +58,13 @@ test('shared report updates only report fields and timestamps, and explains a mi
     update(value) { patch = value; return this; }, eq(key, value) { filters.push([key, value]); return this; }, select() { return this; },
     single: async () => ({ data: { ...lot, ...patch }, error: null }),
   }; } };
-  const result = await saveAnomalyReport(client, 'remote', lot, reportFields, storage());
+  const result = await saveAnomalyReport(client, 'remote', lot, { root_cause: reportFields.root_cause }, storage());
   assert.deepEqual(Object.keys(patch).sort(), ['anomaly_report', 'updated_at']);
   assert.deepEqual(filters, [['id', lot.id], ['updated_at', lot.updated_at]]);
   assert.equal(result.lot_qty, lot.lot_qty);
+  assert.equal(result.anomaly_report.immediate_action, '');
   const missing = { from: () => ({ update() { return this; }, eq() { return this; }, select() { return this; }, single: async () => ({ error: { code: 'PGRST204', message: 'Missing anomaly_report column' } }) }) };
   await assert.rejects(saveAnomalyReport(missing, 'remote', lot, reportFields, storage()), /supabase-lot-anomaly-reports.sql/);
+  const outdated = { from: () => ({ update() { return this; }, eq() { return this; }, select() { return this; }, single: async () => ({ error: { code: 'P0001', message: 'Rapport incomplet : root_cause' } }) }) };
+  await assert.rejects(saveAnomalyReport(outdated, 'remote', lot, {}, storage()), /champs vides nécessite une mise à jour/);
 });

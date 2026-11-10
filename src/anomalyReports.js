@@ -8,11 +8,7 @@ export const anomalyFields = [
   ['corrective_effectiveness', 'Efficacité de l’action corrective'],
 ];
 
-export function validateAnomalyReport(fields) {
-  return anomalyFields.filter(([key]) => !String(fields[key] || '').trim()).map(([, label]) => label);
-}
-
-export function buildAnomalyReport(lot, fields, previous = lot.anomaly_report) {
+export function buildAnomalyReport(lot, fields = {}, previous = lot.anomaly_report) {
   const contextFields = ['product_reference', 'work_order', 'inspection_date', 'department', 'client_name', 'lot_number', 'lot_qty', 'sample_qty', 'inspector_name', 'defect', 'decision'];
   return {
     version: 1, id: previous?.id || globalThis.crypto.randomUUID(), lot_id: lot.id,
@@ -29,13 +25,13 @@ export function anomalyReportNumber(report) {
 export const anomalyMigrationMessage = 'Pour enregistrer les rapports dans Supabase, exécutez supabase-lot-anomaly-reports.sql, puis actualisez.';
 
 export function reportStorageError(error) {
+  if (error.code === 'P0001' && /Rapport incomplet/.test(String(error.message))) return new Error('L’enregistrement des champs vides nécessite une mise à jour. Contactez votre administrateur.');
   if (['42703', 'PGRST204'].includes(error.code) && String(error.message).includes('anomaly_report')) return new Error(anomalyMigrationMessage);
   if (error.code === 'PGRST116') return new Error('Le contrôle a été modifié. Actualisez avant d’enregistrer le rapport.');
   return error;
 }
 
 export async function saveAnomalyReport(client, mode, lot, fields, storage) {
-  if (validateAnomalyReport(fields).length) throw new Error('Complétez les cinq descriptions du rapport.');
   if (lot.decision !== 'NOK' && !lot.anomaly_report) throw new Error('Un nouveau rapport nécessite un lot NOK enregistré.');
   const report = buildAnomalyReport(lot, fields);
   if (mode === 'remote') {
